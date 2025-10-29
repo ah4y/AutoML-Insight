@@ -1,0 +1,29 @@
+# See experiments/configs/default.yaml for configuration
+random_seed: 42
+
+experiment:
+  name: automl_experiment
+  task: classification  # or clustering
+  
+data:
+  path: data/demo_iris.csv
+  target_column: target
+
+models:
+  - LogisticRegression
+  - RandomForest
+  - XGBoost
+  - MLP
+
+evaluation:
+  n_folds: 5
+  n_repeats: 3
+  metrics:
+    - accuracy
+    - f1_macro
+    - roc_auc_ovr
+
+output:
+  save_models: true
+  save_results: true
+  results_dir: results/runs

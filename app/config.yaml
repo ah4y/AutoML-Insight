@@ -1,0 +1,67 @@
+# AutoML-Insight Configuration
+
+# Random seed for reproducibility
+random_seed: 42
+
+# Logging
+logging:
+  level: INFO
+  log_dir: results/logs
+
+# Data preprocessing
+preprocessing:
+  numeric_imputation: median
+  categorical_imputation: constant
+  scaling: standard
+  encoding: onehot
+
+# Model training
+training:
+  n_folds: 5
+  n_repeats: 3
+  test_size: 0.2
+  
+# Hyperparameter tuning
+tuning:
+  enabled: true
+  n_trials: 20
+  cv_folds: 3
+  timeout: 300  # seconds per model
+
+# Clustering
+clustering:
+  k_range: [2, 10]
+  auto_select_k: true
+
+# Evaluation
+evaluation:
+  confidence_level: 0.95
+  statistical_tests: true
+
+# Visualization
+visualization:
+  plot_format: png
+  plot_dpi: 150
+  interactive: true
+
+# Explainability
+explainability:
+  shap_sample_size: 100
+  top_features: 15
+
+# Ensemble
+ensemble:
+  enabled: true
+  top_k_models: 3
+  calibration: true
+
+# Meta-learning
+meta_learning:
+  enabled: false
+  fallback_to_heuristics: true
+
+# Report
+report:
+  format: pdf
+  include_plots: true
+  include_metadata: true

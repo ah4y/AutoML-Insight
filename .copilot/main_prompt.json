@@ -1,0 +1,278 @@
+{
+  "name": "AutoML-Insight Main Prompt",
+  "version": "2.0",
+  "last_updated": "2025-10-29",
+  "goal": "Build and maintain a professional, research-ready AutoML platform named 'AutoML-Insight' with advanced capabilities including remote execution (Jupyter/Colab), intelligent preprocessing, meta-learning recommendations, and comprehensive explainability. The system combines production-level architecture with cutting-edge ML techniques and optional AI-driven insights.",
+  
+  "principles": {
+    "architecture": "Follow modular OOP principles with clear interfaces, reusable components, and separation of concerns (data, models, training, UI).",
+    "reproducibility": "Use deterministic seeds, YAML configs, and JSON-logged results for reproducible experiments.",
+    "transparency": "Include SHAP-based explanations, feature importance charts, calibrated metrics with CI bars, and clear model reasoning.",
+    "performance": "Vectorized operations (NumPy/Pandas), efficient caching, optional GPU acceleration, adaptive CV strategies, and smart feature selection.",
+    "usability": "Streamlit UI with intuitive tabs, interactive Plotly visualizations, demo mode, and one-click report export.",
+    "scalability": "Support local, remote Jupyter, and Google Colab execution. Handle large datasets (150K+ samples, 361K+ features) with intelligent preprocessing.",
+    "intelligence": "Meta-learning for model recommendations, adaptive hyperparameter tuning (Optuna), and pattern recognition for dataset analysis.",
+    "robustness": "Comprehensive error handling, input validation, adaptive CV (2-5 folds based on class size), and automatic task type detection."
+  },
+
+  "current_project_structure": {
+    "implemented": [
+      "app/: main.py (Streamlit entry), ui_dashboard.py (multi-mode execution UI)",
+      "core/: data_profile.py, preprocess.py (adaptive feature selection), models_supervised.py (7 models + PyTorch MLP), models_clustering.py, evaluate_cls.py (adaptive CV), evaluate_clu.py, visualize.py, explain.py, meta_selector.py, ensemble.py",
+      "utils/: logging_utils.py, jupyter_client.py (file-based remote execution), colab_setup.py, cloud_executor.py",
+      "data/: demo_iris.csv, demo_wine.csv",
+      "Remote execution: JupyterServerClient with file upload/download via Contents API"
+    ],
+    "recent_enhancements": [
+      "✅ Remote Jupyter server execution (file-based, not WebSocket)",
+      "✅ Adaptive cross-validation (2-5 folds based on min class size)",
+      "✅ Task type detection (regression vs classification based on target uniqueness)",
+      "✅ Demo mode with locked target column",
+      "✅ Smart feature selection (max 1000 features before transformation)",
+      "✅ Enhanced error messages and detailed logging",
+      "✅ Three execution modes: Local, Remote Jupyter, Google Colab"
+    ]
+  },
+
+  "critical_behaviors": {
+    "data_validation": [
+      "Classification requires ≥2 samples per class for cross-validation",
+      "Detect continuous targets: if >50% unique numeric values → suggest Regression",
+      "Demo mode locks target column to 'target' to prevent user error",
+      "Check for non-contiguous class labels and apply LabelEncoder",
+      "Handle imbalanced datasets with adaptive CV strategy"
+    ],
+    "preprocessing": [
+      "Pre-select top 1000 features by correlation before transformation (memory optimization)",
+      "Post-selection using SelectKBest if >1000 features remain after encoding",
+      "Log class distribution before and after preprocessing for transparency",
+      "Handle missing values: median for numeric, 'missing' constant for categorical",
+      "StandardScaler for numeric, OneHotEncoder for categorical features"
+    ],
+    "cross_validation": [
+      "Adaptive strategy: min_class_count < 10 → 2-fold CV, 10-19 → 3-fold, ≥20 → 5-fold",
+      "n_folds = min(target_folds, min_class_count) to prevent CV errors",
+      "Reduce repeats for small datasets (1-3 repeats based on size)",
+      "Log CV strategy choice with rationale for user awareness"
+    ],
+    "remote_execution": [
+      "File-based execution: upload script → run via notebook → download results",
+      "Use Jupyter Contents API (not WebSocket) for reliability",
+      "Connection test before execution, detailed error messages",
+      "Support both token-based and password-based authentication",
+      "Colab integration via ngrok for remote access"
+    ]
+  },
+
+  "instructions": [
+    {
+      "step": "Project Structure & Organization",
+      "details": [
+        "Maintain modular structure: app/, core/, utils/, data/, results/, tests/",
+        "Core modules: data_profile.py, preprocess.py, models_*.py, evaluate_*.py, visualize.py, explain.py, meta_selector.py",
+        "Utils: logging_utils.py, jupyter_client.py, colab_setup.py, cloud_executor.py",
+        "Keep clear separation: UI (app/), ML logic (core/), utilities (utils/)",
+        "Use type hints, docstrings, and consistent naming conventions"
+      ]
+    },
+    {
+      "step": "Data Profiling & Validation",
+      "details": [
+        "DataProfiler: compute meta-features (rows, cols, missing ratio, type distribution, skewness, kurtosis, class entropy)",
+        "Automatic task detection: analyze target uniqueness and type",
+        "Warn users: too many classes, continuous values in classification, insufficient samples per class",
+        "Generate insight cards: dataset characteristics, recommended approaches, potential issues",
+        "Log detailed statistics for reproducibility and debugging"
+      ]
+    },
+    {
+      "step": "Preprocessing Pipeline",
+      "details": [
+        "DataPreprocessor with adaptive feature selection (max_features=1000 default)",
+        "Two-stage selection: pre-selection by correlation, post-selection by SelectKBest",
+        "Handle imbalanced data, remove constant/low-variance features",
+        "LabelEncoder for targets to ensure 0-indexed contiguous labels",
+        "Log transformations: features removed, encoding applied, final shape"
+      ]
+    },
+    {
+      "step": "Model Training & Evaluation",
+      "details": [
+        "7 supervised models: LogisticRegression, LinearSVM, RBF-SVM, KNN, RandomForest, XGBoost, MLP (PyTorch)",
+        "5 clustering models: KMeans, GMM, DBSCAN, Agglomerative, Spectral",
+        "Adaptive CV with stratification for classification",
+        "Metrics: Accuracy, F1, ROC-AUC, Log Loss, Brier Score with CI intervals",
+        "Statistical tests: McNemar, Wilcoxon for model comparison",
+        "Clustering metrics: Silhouette, Davies-Bouldin, Calinski-Harabasz"
+      ]
+    },
+    {
+      "step": "Remote Execution Support",
+      "details": [
+        "JupyterServerClient: test connection, upload files, execute code, download results",
+        "File-based workflow: wrap code in try/except, capture stdout/stderr, save to JSON",
+        "Handle authentication: token-based preferred, password fallback",
+        "Colab setup: ngrok integration, setup instructions, connection guidance",
+        "Cloud executor: analyze dataset size, recommend execution mode (local/remote/cloud)"
+      ]
+    },
+    {
+      "step": "Explainability & Visualization",
+      "details": [
+        "SHAP values for feature importance and model interpretation",
+        "Interactive Plotly charts: ROC curves, confusion matrices, feature importance",
+        "Clustering visualizations: elbow plots, silhouette analysis, UMAP projections",
+        "Calibration curves for probability assessment",
+        "Per-class metrics breakdown for detailed analysis"
+      ]
+    },
+    {
+      "step": "Meta-Learning & Recommendations",
+      "details": [
+        "MetaModelSelector: map dataset meta-features to model performance",
+        "Combine rule-based heuristics with learned patterns",
+        "Generate structured recommendations with reasoning",
+        "Consider: dataset size, feature types, class balance, complexity",
+        "Provide confidence scores and alternative suggestions"
+      ]
+    },
+    {
+      "step": "Streamlit UI & User Experience",
+      "details": [
+        "Sidebar: dataset upload, demo mode toggle, task selection, execution mode selector",
+        "Three execution modes: Local (CPU/GPU), Remote Jupyter (shared resources), Google Colab (free GPU)",
+        "Tabs: Data Overview, Models (Supervised/Clustering), Explainability, Recommendation, Report",
+        "Demo mode: Iris (150×4, 3 classes) and Wine (178×13, 3 classes) with locked targets",
+        "Real-time progress bars, status indicators, and error messages",
+        "Connection status for remote execution with detailed troubleshooting"
+      ]
+    },
+    {
+      "step": "Error Handling & User Guidance",
+      "details": [
+        "Validate inputs: check class distribution, target type, sample size",
+        "Clear error messages with actionable solutions",
+        "Warnings for: small datasets, imbalanced classes, high dimensionality",
+        "Automatic fallbacks: reduce CV folds, adjust parameters, suggest alternatives",
+        "Log all errors with context for debugging and support"
+      ]
+    },
+    {
+      "step": "Testing & Quality Assurance",
+      "details": [
+        "Unit tests for each core module: preprocessing, evaluation, visualization",
+        "Integration tests for full pipeline: data load → train → evaluate → explain",
+        "Test demo datasets: ensure reproducibility and correctness",
+        "Test edge cases: single-class data, all missing values, very small datasets",
+        "Test remote execution: connection, upload, execution, download"
+      ]
+    }
+  ],
+
+  "common_issues_and_solutions": {
+    "cv_errors": {
+      "problem": "n_splits=5 cannot be greater than the number of members in each class",
+      "cause": "Insufficient samples per class for requested CV folds",
+      "solution": "Use adaptive CV: n_folds = min(target_folds, min_class_count)",
+      "prevention": "Check class distribution before training, warn users, adjust automatically"
+    },
+    "non_contiguous_labels": {
+      "problem": "XGBoost expects [0,1,2,...] but got [2,5,7,...]",
+      "cause": "Class labels are not 0-indexed and contiguous",
+      "solution": "Apply LabelEncoder to all targets in preprocessing",
+      "verification": "Check unique(y_processed) == [0,1,2,...,n-1]"
+    },
+    "wrong_task_type": {
+      "problem": "Classification selected but target has continuous values",
+      "cause": "User misidentified task or selected wrong column",
+      "solution": "Auto-detect: if n_unique/n_samples > 0.5 and numeric → suggest Regression",
+      "prevention": "Lock demo mode targets, add task type hints in UI"
+    },
+    "memory_issues": {
+      "problem": "Out of memory with high-dimensional datasets",
+      "cause": "Too many features after one-hot encoding",
+      "solution": "Two-stage feature selection: pre-select 1000 by correlation, post-select by importance",
+      "optimization": "Recommend remote execution for very large datasets"
+    },
+    "remote_connection_fails": {
+      "problem": "Cannot connect to Jupyter server",
+      "causes": "Wrong URL/token, server not running, network issues, CORS",
+      "solution": "Test connection with detailed error messages, verify server status, check token",
+      "troubleshooting": "Provide step-by-step guidance, show server info on success"
+    }
+  },
+
+  "future_enhancements": {
+    "ai_feedback_integration": [
+      "Optional: Integrate OpenAI/Anthropic APIs for dataset insights",
+      "Generate AI-driven recommendations and explanations",
+      "Anomaly detection and data quality suggestions",
+      "Contextual hints during training and evaluation"
+    ],
+    "performance_optimization": [
+      "Multi-GPU support for PyTorch models",
+      "Async data loading and preprocessing",
+      "Model quantization for faster inference",
+      "Incremental learning for large datasets"
+    ],
+    "advanced_features": [
+      "Automated feature engineering",
+      "Neural architecture search (NAS)",
+      "Time series forecasting support",
+      "Deep learning for image/text data",
+      "AutoML pipeline optimization with genetic algorithms"
+    ],
+    "reporting_and_collaboration": [
+      "PDF/HTML report generation with AI narratives",
+      "Experiment tracking and versioning",
+      "Model registry and deployment tools",
+      "Team collaboration features"
+    ]
+  },
+
+  "output": {
+    "deliverables": [
+      "✅ Fully functional AutoML-Insight with local and remote execution",
+      "✅ Interactive Streamlit dashboard with 3 execution modes",
+      "✅ Adaptive preprocessing handling 150K+ samples, 361K+ features",
+      "✅ 7 supervised + 5 clustering models with comprehensive evaluation",
+      "✅ Meta-learning recommendation engine with explainability",
+      "✅ Demo datasets (Iris/Wine) with locked targets for reliability",
+      "✅ Remote Jupyter/Colab integration for scalable execution",
+      "✅ Production-ready codebase with error handling and logging",
+      "🔄 (In progress) PDF report generation with visualizations",
+      "🔄 (Planned) AI feedback integration for intelligent insights"
+    ]
+  },
+
+  "development_guidelines": {
+    "code_style": [
+      "Follow PEP 8 conventions",
+      "Use type hints for function signatures",
+      "Write descriptive docstrings (Google style)",
+      "Keep functions focused and single-purpose",
+      "Limit line length to 100 characters"
+    ],
+    "error_handling": [
+      "Use try-except blocks for external operations",
+      "Log errors with context using logging module",
+      "Provide user-friendly error messages in UI",
+      "Include troubleshooting hints where applicable",
+      "Never expose sensitive information in errors"
+    ],
+    "testing": [
+      "Write tests for all core functionality",
+      "Test edge cases and error conditions",
+      "Use pytest fixtures for setup/teardown",
+      "Mock external dependencies (APIs, file I/O)",
+      "Aim for >80% code coverage"
+    ],
+    "documentation": [
+      "Keep README.md updated with setup instructions",
+      "Document all public APIs and classes",
+      "Include usage examples in docstrings",
+      "Maintain CHANGELOG.md for version tracking",
+      "Add inline comments for complex logic"
+    ]
+  }
+}

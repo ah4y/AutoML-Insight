@@ -1,0 +1,197 @@
+# AutoML-Insight Configuration File
+# This file defines default parameters for reproducible experiments
+
+# General Settings
+general:
+  random_seed: 42
+  n_jobs: 1  # Use 1 for Windows compatibility, -1 for max cores on Linux/Mac
+  verbose: true
+  log_level: "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+# Data Preprocessing
+preprocessing:
+  max_features: 1000  # Maximum features to keep (memory optimization)
+  missing_strategy:
+    numeric: "median"  # mean, median, most_frequent
+    categorical: "constant"  # constant, most_frequent
+  scaling: "standard"  # standard, minmax, robust, none
+  encoding: "onehot"  # onehot, label, target
+  remove_low_variance: true
+  variance_threshold: 0.01
+
+# Cross-Validation Strategy
+cross_validation:
+  n_folds:
+    small: 2  # < 10 samples per class
+    medium: 3  # 10-19 samples per class
+    large: 5  # >= 20 samples per class
+  n_repeats:
+    small: 1
+    medium: 2
+    large: 3
+  stratify: true  # Use stratified splits for classification
+  shuffle: true
+
+# Model Parameters
+models:
+  logistic_regression:
+    max_iter: 1000
+    solver: "lbfgs"
+    penalty: "l2"
+  
+  linear_svm:
+    max_iter: 1000
+    dual: false
+    penalty: "l2"
+  
+  rbf_svm:
+    kernel: "rbf"
+    probability: true
+    gamma: "scale"
+  
+  knn:
+    n_neighbors: 5
+    weights: "uniform"  # uniform, distance
+    metric: "minkowski"
+  
+  random_forest:
+    n_estimators: 100
+    max_depth: 10
+    min_samples_split: 2
+    min_samples_leaf: 1
+  
+  xgboost:
+    n_estimators: 100
+    max_depth: 6
+    learning_rate: 0.1
+    subsample: 0.8
+    colsample_bytree: 0.8
+    eval_metric: "logloss"
+  
+  mlp:
+    hidden_layers: [128, 64]
+    dropout: 0.3
+    learning_rate: 0.001
+    batch_size: 32
+    max_epochs: 100
+    patience: 10
+    use_gpu: true  # Use CUDA if available
+
+# Clustering
+clustering:
+  kmeans:
+    n_clusters_range: [2, 10]
+    method: "elbow"  # elbow, silhouette, both
+  
+  gmm:
+    n_components_range: [2, 10]
+    covariance_type: "full"  # full, tied, diag, spherical
+  
+  dbscan:
+    eps: null  # null for auto-detection
+    min_samples: 5
+  
+  agglomerative:
+    n_clusters: 3
+    linkage: "ward"  # ward, complete, average, single
+  
+  spectral:
+    n_clusters: 3
+    affinity: "rbf"  # rbf, nearest_neighbors
+
+# Hyperparameter Tuning
+tuning:
+  enabled: false  # Enable Optuna-based tuning
+  n_trials: 50
+  timeout: 3600  # seconds
+  pruner: "median"  # median, hyperband
+  sampler: "tpe"  # tpe, random, grid
+
+# Explainability
+explainability:
+  shap:
+    enabled: true
+    max_samples: 100  # Max samples for SHAP computation (performance)
+    plot_types: ["summary", "waterfall", "dependence"]
+  
+  feature_importance:
+    enabled: true
+    top_n: 20  # Show top N features
+  
+  pdp:
+    enabled: false  # Partial Dependence Plots (computationally expensive)
+    features: []  # Empty = auto-select top features
+
+# Visualization
+visualization:
+  theme: "plotly"  # plotly, seaborn, matplotlib
+  figure_size: [10, 6]
+  dpi: 100
+  interactive: true
+  save_plots: true
+  plot_format: "png"  # png, svg, pdf
+
+# Remote Execution
+remote:
+  jupyter:
+    default_url: "http://localhost:8888"
+    default_token: ""
+    timeout: 300  # seconds
+    retry_attempts: 3
+  
+  colab:
+    ngrok_auth_token: ""  # Set your ngrok token
+    port: 8888
+  
+  cloud:
+    provider: "none"  # none, aws, gcp, azure
+    region: "us-east-1"
+    instance_type: "t2.large"
+
+# Reporting
+reporting:
+  format: "pdf"  # pdf, html, markdown
+  include_plots: true
+  include_code: false
+  include_data_profile: true
+  include_feature_importance: true
+  include_confusion_matrix: true
+  include_recommendations: true
+
+# Demo Mode
+demo:
+  datasets: ["iris", "wine"]
+  auto_run: false
+  lock_target: true
+
+# Logging
+logging:
+  console_output: true
+  file_output: true
+  log_file: "logs/automl_insight.log"
+  rotation: "daily"  # daily, weekly, size
+  max_bytes: 10485760  # 10 MB
+  backup_count: 5
+
+# Performance
+performance:
+  cache_enabled: true
+  cache_dir: ".cache"
+  parallel_cv: false  # Parallel cross-validation (experimental)
+  gpu_memory_fraction: 0.8  # Max GPU memory to use
+  early_stopping: true
+
+# Data Validation
+validation:
+  check_task_type: true  # Auto-detect regression vs classification
+  warn_high_cardinality: 50  # Warn if > N unique classes
+  warn_small_dataset: 100  # Warn if < N samples
+  warn_imbalance: 0.1  # Warn if minority class < 10%
+  min_samples_per_class: 2  # Minimum for CV
+
+# Experimental Features
+experimental:
+  ai_feedback: false  # AI-powered insights (requires API keys)
+  auto_feature_engineering: false
+  neural_architecture_search: false
+  incremental_learning: false

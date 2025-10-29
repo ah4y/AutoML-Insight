@@ -1,0 +1,101 @@
+{
+  "goal": "Develop a next-generation AutoML application named 'AutoML-Insight' in VS Code. The system must provide a fully automated, intelligent machine-learning workflow: from dataset profiling and model training to visualization and interpretation. The entire app must integrate real-time AI feedback and dynamic recommendations powered by state-of-the-art models (OpenAI GPT, Groq, Anthropic Claude, or multi-model API chaining). The goal is to maximize model training performance, accelerate experimentation, and provide context-aware guidance to the user at every stage.",
+  "principles": {
+    "architecture": "Follow clean modular OOP structure. Separate data, models, training logic, and UI layers for maximum reusability.",
+    "ai_feedback": "Every functional module (data profiling, training, evaluation, visualization, reporting) must include a feedback system driven by one or more AI APIs that analyze current results, detect anomalies, and suggest next steps or optimizations.",
+    "performance": "Use the latest optimization techniques (GPU batching, async data pipelines, parallel CV, mixed precision for DL). Include adaptive early stopping and hyperparameter search acceleration (Optuna + Bayesian optimization).",
+    "intelligence": "Integrate meta-learning and pattern recognition to analyze dataset shape, quality, and feature correlations, then auto-suggest analogies, recommended transformations, or potential model families.",
+    "scalability": "Design training to scale across CPUs/GPUs. Use caching, seed control, and YAML config reproducibility.",
+    "future_engineering": "Enable continuous learning: record model metadata, feedback summaries, and allow the AI layer to learn user preferences and adapt future recommendations."
+  },
+  "instructions": [
+    {
+      "step": "AI-Driven Dataset Understanding",
+      "details": [
+        "In data_profile.py, integrate OpenAI and Groq APIs for automated insights. When a dataset loads, the system must: detect schema, imbalance, anomalies, correlation, and pattern distributions.",
+        "Generate AI-driven 'Dataset Insight Cards' that describe dataset nature (classification/regression, linearity, noise level, cluster tendency).",
+        "Provide recommendations: e.g. 'Try ensemble methods — non-linear relationships detected' or 'Consider PCA — high collinearity'.",
+        "In Demo Mode and user uploads, show AI hint banners that explain potential analogies and analyses possible on this dataset."
+      ]
+    },
+    {
+      "step": "Performance-Optimized Training",
+      "details": [
+        "Integrate multi-GPU PyTorch support, torch.compile for acceleration, and AMP mixed precision.",
+        "Use Optuna with pruners (Median/Hyperband) for faster convergence.",
+        "Track GPU utilization and training throughput metrics.",
+        "AI feedback module should evaluate training logs, detect plateauing, overfitting, or underfitting, and suggest tuning steps automatically."
+      ]
+    },
+    {
+      "step": "Model Ecosystem & Feedback Integration",
+      "details": [
+        "For each training cycle, pass results summary (metrics, loss trends) to the AI feedback layer.",
+        "The AI system (multi-API layer) returns contextual analysis: e.g. 'Model underfits; try more hidden units' or 'F1 stable — consider reducing learning rate'.",
+        "Store AI feedback in /results/feedback_logs/ as JSON for reproducibility.",
+        "Enable a feedback tab in Streamlit showing the latest suggestions with confidence scores."
+      ]
+    },
+    {
+      "step": "Visualization Modernization",
+      "details": [
+        "Replace static Matplotlib visuals with Plotly, Altair, or ECharts for dynamic interactivity.",
+        "Add real-time training progress bars, confusion matrix animations, and clustering maps with zoom and hover details.",
+        "AI Feedback integration: each chart should include an 'AI Analysis' panel summarizing what the visual means, e.g., 'ROC curve shows marginal gain beyond threshold 0.85 — consider threshold tuning.'"
+      ]
+    },
+    {
+      "step": "Enhanced Recommendation System",
+      "details": [
+        "Extend meta_selector.py to combine rule-based logic and transformer-based inference (few-shot prompting with dataset meta-features).",
+        "Chain multiple models: e.g. Claude for reasoning, GPT for text generation, Groq for speed, forming an AI reasoning chain.",
+        "Output recommendations as a structured explanation card: 'Chosen Model: XGBoost — Reason: Best generalization; low variance; 3x faster inference.'",
+        "Allow manual override while keeping contextual AI hints."
+      ]
+    },
+    {
+      "step": "Future Engineer Tools",
+      "details": [
+        "Integrate an 'Experiment Planner' tab that uses AI to design the next experiment (e.g., which models or hyperparams to test next).",
+        "Add auto-docstring generation and AI code-review suggestions via integrated model (Claude or GPT-5).",
+        "Implement automated model versioning and AI summarization of training sessions ('Session Summary: 5 models tested; best MLP; F1 improved 4.2%').",
+        "Enable long-term meta-learning across user sessions to adapt future suggestions based on prior feedback."
+      ]
+    },
+    {
+      "step": "Cutting-Edge Tooling & Libraries",
+      "details": [
+        "Use the newest stable versions of: scikit-learn, PyTorch 2.x, XGBoost 2.x, Optuna ≥3.5, SHAP, and HuggingFace Transformers for model insight generation.",
+        "Integrate optional AutoPyTorch and LightGBM as ensemble candidates.",
+        "Leverage LangChain or LlamaIndex for orchestrating multi-model AI feedback loops.",
+        "Include model compression (quantization + pruning) utilities for deployment optimization."
+      ]
+    },
+    {
+      "step": "Streamlit + AI Feedback Experience",
+      "details": [
+        "Sidebar: Dataset upload + AI summary card preview.",
+        "Tabs: Data Overview, Supervised, Clustering, Explainability, Recommendation, AI Feedback, Experiment Planner.",
+        "Each tab should query the AI feedback module for contextual suggestions.",
+        "Visuals must auto-update based on user interaction, with GPT-powered commentary boxes explaining insights."
+      ]
+    },
+    {
+      "step": "Reporting & Continuous Learning",
+      "details": [
+        "Generate PDF/HTML reports enriched with AI-written narratives that summarize findings and interpret graphs.",
+        "Embed mini feedback sections inside the report with future experiment suggestions.",
+        "Allow the AI layer to retrain its recommendation logic based on past outcomes for personalized guidance."
+      ]
+    }
+  ],
+  "output": {
+    "deliverables": [
+      "Fully AI-integrated AutoML-Insight app with dataset-aware analysis and feedback.",
+      "Dynamic performance-optimized training pipeline with adaptive hyperparameter tuning.",
+      "Multi-API feedback layer (OpenAI, Groq, Anthropic) for contextual recommendations.",
+      "Interactive modern Streamlit dashboard with intelligent visual explanations.",
+      "Continuous learning module that evolves feedback and recommendations over time."
+    ]
+  }
+}
