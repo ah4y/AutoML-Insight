@@ -3,18 +3,20 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**AutoML-Insight** is a professional, research-ready AutoML platform that automatically profiles datasets, trains and compares advanced ML models (ANNs, Ensembles, Clustering), visualizes metrics, and recommends the best approach using meta-learning and pattern recognition.
+**AutoML-Insight** is a professional AutoML platform with **AI-powered insights** that automatically profiles datasets, trains and compares 13+ ML models, provides intelligent recommendations, and delivers comprehensive analysis through an interactive Streamlit dashboard.
 
 ## ✨ Features
 
+- 🧠 **AI-Powered Insights**: Dynamic analysis using Groq/OpenAI/Gemini LLMs at every workflow stage
 - 📊 **Automatic Dataset Profiling**: Comprehensive statistical analysis and meta-feature extraction
-- 🤖 **Multi-Model Training**: 7+ supervised and 5+ unsupervised learning algorithms
+- 🤖 **13+ ML Models**: 7 supervised (LogReg, SVM, RF, XGBoost, MLP) + 6 clustering algorithms
 - 📈 **Rigorous Evaluation**: Nested cross-validation with confidence intervals and statistical tests
-- 🔍 **Model Explainability**: SHAP-based explanations, feature importance, and PDP
-- 🎯 **Smart Recommendations**: Meta-learning engine with heuristic fallback
+- 🔍 **Model Explainability**: SHAP-based explanations, feature importance, and interpretability
+- 🎯 **Smart Recommendations**: Meta-learning engine with AI-enhanced deployment guidance
 - 🔧 **Hyperparameter Tuning**: Optuna-based optimization with nested CV
-- 📊 **Interactive Dashboard**: Streamlit UI with Plotly visualizations
-- 📄 **PDF Reports**: Exportable analytical reports with all results
+- 📊 **Interactive Dashboard**: Streamlit UI with Plotly visualizations and real-time AI analysis
+- 📄 **AI-Generated Reports**: Comprehensive reports with executive summaries and actionable insights
+- ☁️ **Remote Execution**: Jupyter/Colab integration for cloud-based training
 - 🧪 **Production-Ready**: Modular OOP design, logging, testing, and reproducibility
 
 ## 🏗️ Architecture
@@ -23,30 +25,31 @@
 AutoML-Insight/
 ├── app/                    # Streamlit application
 │   ├── main.py            # Entry point
-│   ├── ui_dashboard.py    # Dashboard UI
+│   ├── ui_dashboard.py    # Dashboard UI with AI integration
 │   ├── report_builder.py  # PDF report generation
 │   └── config.yaml        # App configuration
 ├── core/                  # Core ML components
+│   ├── ai_insights.py     # AI engine (Groq/OpenAI/Gemini)
 │   ├── data_profile.py    # Dataset profiling
 │   ├── preprocess.py      # Data preprocessing
-│   ├── models_supervised.py  # Supervised models
-│   ├── models_clustering.py  # Clustering models
+│   ├── models_supervised.py  # 7 supervised models
+│   ├── models_clustering.py  # 6 clustering algorithms
 │   ├── tuning.py          # Hyperparameter tuning
 │   ├── evaluate_cls.py    # Classification evaluation
 │   ├── evaluate_clu.py    # Clustering evaluation
-│   ├── visualize.py       # Visualization utilities
-│   ├── explain.py         # Model explainability
+│   ├── visualize.py       # Plotly visualizations
+│   ├── explain.py         # SHAP explainability
 │   ├── meta_selector.py   # Meta-learning selector
 │   └── ensemble.py        # Ensemble methods
 ├── experiments/           # Experiment runners
 │   ├── run_experiment.py  # CLI experiment runner
 │   └── configs/           # Experiment configs
-├── data/                  # Data storage
-├── results/               # Output directory
-│   ├── runs/             # Experiment results
-│   ├── reports/          # PDF reports
-│   └── logs/             # Log files
+├── data/                  # Demo datasets
+├── docs/                  # Documentation
+│   └── AI_SETUP.md       # AI integration guide
 ├── utils/                 # Utility functions
+│   ├── jupyter_client.py # Remote execution
+│   ├── cloud_executor.py # Cloud deployment
 │   ├── seed_utils.py     # Reproducibility
 │   ├── logging_utils.py  # Logging
 │   └── metrics_utils.py  # Metrics computation
@@ -59,7 +62,7 @@ AutoML-Insight/
 
 ```powershell
 # Clone the repository
-git clone https://github.com/yourusername/AutoML-Insight.git
+git clone https://github.com/ah4y/AutoML-Insight.git
 cd AutoML-Insight
 
 # Create virtual environment (recommended)
@@ -70,13 +73,32 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
+### AI Setup (Optional but Recommended)
+
+For AI-powered insights, create a `.env` file with your API keys:
+
+```powershell
+# Copy template
+Copy-Item .env.example .env
+
+# Edit .env and add your API keys
+notepad .env
+```
+
+Supported providers:
+- **Groq** (recommended, free): Get key at https://console.groq.com
+- **OpenAI** (paid): Get key at https://platform.openai.com
+- **Gemini** (free tier): Get key at https://makersuite.google.com
+
+See `docs/AI_SETUP.md` for detailed instructions.
+
 ### Launch Dashboard
 
 ```powershell
 streamlit run app/main.py
 ```
 
-The dashboard will open in your browser at `http://localhost:8501`.
+The dashboard will open at `http://localhost:8501`.
 
 ### Run Experiments (CLI)
 
@@ -115,10 +137,11 @@ python experiments/run_experiment.py --config experiments/configs/default.yaml
 
 ### Unsupervised Learning
 - KMeans (auto K selection)
-- Gaussian Mixture Models
+- Gaussian Mixture Models (GMM)
 - DBSCAN (auto epsilon)
 - Agglomerative Clustering
 - Spectral Clustering
+- Mean Shift
 
 ## 📈 Evaluation Metrics
 
@@ -140,19 +163,21 @@ python experiments/run_experiment.py --config experiments/configs/default.yaml
 ## 🔍 Explainability
 
 - **SHAP Values**: Tree, Linear, and Kernel explainers
-- **Feature Importance**: Native and permutation-based
-- **Partial Dependence Plots**: Coming soon
-- **Top Features Analysis**: Automated ranking
+- **Feature Importance**: Native and permutation-based  
+- **AI-Powered Interpretation**: Context-aware explanations of feature relationships
+- **Top Features Analysis**: Automated ranking with business insights
 
 ## 📄 Reports
 
-Generate comprehensive PDF reports including:
-- Dataset profile and statistics
-- Model performance comparison
-- Statistical significance tests
-- Feature importance visualizations
-- Recommendation rationale
-- Metadata and reproducibility info
+Generate comprehensive reports including:
+- **AI-Generated Executive Summary**: Business-focused insights for stakeholders
+- **Methodology Analysis**: Detailed explanation of algorithms and approach
+- **Key Findings**: 4-5 critical discoveries from your data
+- **Model Performance**: Statistical comparison with significance tests
+- **Feature Analysis**: SHAP visualizations and AI interpretation
+- **Deployment Recommendations**: Production-ready guidance and risk assessment
+- **Limitations**: Honest assessment of model constraints
+- PDF export with all visualizations and metadata
 
 ## 🧪 Testing
 
@@ -173,6 +198,30 @@ Edit `app/config.yaml` to customize:
 - Visualization settings
 - Report format options
 
+## 🧠 AI Features
+
+### Dynamic Analysis Across All Workflow Stages
+
+**Classification Tasks:**
+- Performance assessment with context-aware insights
+- Model comparison explaining why certain models excel
+- Improvement suggestions based on actual results
+- Deployment readiness evaluation
+- Risk assessment and monitoring guidance
+
+**Clustering Tasks:**
+- Cluster quality evaluation with honest assessments
+- Cluster interpretation and business meaning
+- Balance analysis and distribution insights
+- Validation steps before deployment
+- Use case recommendations
+
+**For All Tasks:**
+- AI-generated comprehensive reports
+- Executive summaries for non-technical stakeholders
+- Actionable next steps
+- Honest limitations and caveats
+
 ## 📚 Academic References
 
 - **Ensemble Learning**: Breiman (2001), Random Forests
@@ -180,6 +229,7 @@ Edit `app/config.yaml` to customize:
 - **SHAP**: Lundberg & Lee (2017), A Unified Approach to Interpreting Model Predictions
 - **Meta-Learning**: Brazdil et al. (2009), Metalearning: Applications to Data Mining
 - **Clustering Validation**: Rousseeuw (1987), Silhouettes: A Graphical Aid
+- **LLM for Analysis**: Groq Llama 3.3 70B, OpenAI GPT-4, Google Gemini 1.5
 
 ## 🤝 Contributing
 
