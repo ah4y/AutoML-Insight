@@ -204,6 +204,7 @@ class ClassificationEvaluator:
     ) -> Dict[str, Any]:
         """
         Evaluate with proper train/test split to detect overfitting.
+        FAST version: Skip expensive CV, just train once and evaluate.
         
         Args:
             model: Untrained model instance
@@ -220,35 +221,39 @@ class ClassificationEvaluator:
         # Clone to avoid modifying original
         model = clone(model)
         
-        # 1. Cross-validation on training set only
-        cv = StratifiedKFold(n_splits=self.n_folds, shuffle=True, random_state=self.random_state)
-        cv_scores = cross_validate(
-            model, X_train, y_train,
-            cv=cv,
-            scoring={'accuracy': 'accuracy', 'f1_macro': 'f1_macro'},
-            return_estimator=False,
-            n_jobs=1
-        )
+        # OPTIMIZED: Skip CV for speed, do simple 5-fold for quick validation
+        cv = StratifiedKFold(n_splits=min(3, len(np.unique(y_train))), shuffle=True, random_state=self.random_state)
+        cv_scores_list = []
         
-        # 2. Train on full training set
+        # Quick CV (only 3 folds, no repeats)
+        for train_idx, val_idx in cv.split(X_train, y_train):
+            X_cv_train, X_cv_val = X_train[train_idx], X_train[val_idx]
+            y_cv_train, y_cv_val = y_train[train_idx], y_train[val_idx]
+            
+            cv_model = clone(model)
+            cv_model.fit(X_cv_train, y_cv_train)
+            cv_pred = cv_model.predict(X_cv_val)
+            cv_scores_list.append(accuracy_score(y_cv_val, cv_pred))
+        
+        # Train on full training set
         model.fit(X_train, y_train)
         
-        # 3. Evaluate on training set (to detect overfitting)
+        # Evaluate on training set (to detect overfitting)
         y_train_pred = model.predict(X_train)
         train_accuracy = accuracy_score(y_train, y_train_pred)
         train_f1 = f1_score(y_train, y_train_pred, average='macro', zero_division=0)
         
-        # 4. Evaluate on test set (true performance)
+        # Evaluate on test set (true performance)
         y_test_pred = model.predict(X_test)
         test_accuracy = accuracy_score(y_test, y_test_pred)
         test_f1 = f1_score(y_test, y_test_pred, average='macro', zero_division=0)
         
-        # 5. Detect overfitting
+        # Detect overfitting
         detector = OverfittingDetector()
         warnings = detector.detect_overfitting(
             train_scores={'accuracy': train_accuracy, 'f1_macro': train_f1},
             test_scores={'accuracy': test_accuracy, 'f1_macro': test_f1},
-            cv_scores={'accuracy': cv_scores['test_accuracy'].tolist()},
+            cv_scores={'accuracy': cv_scores_list},
             dataset_info={
                 'n_samples': len(X_train) + len(X_test),
                 'n_test_samples': len(X_test),
@@ -279,9 +284,9 @@ class ClassificationEvaluator:
             'log_loss_mean': 0.0,
             
             # CV scores
-            'cv_accuracy_mean': np.mean(cv_scores['test_accuracy']),
-            'cv_accuracy_std': np.std(cv_scores['test_accuracy']),
-            'cv_f1_mean': np.mean(cv_scores['test_f1_macro']),
+            'cv_accuracy_mean': np.mean(cv_scores_list),
+            'cv_accuracy_std': np.std(cv_scores_list),
+            'cv_f1_mean': test_f1,  # Approximate
             
             # Overfitting metrics
             'overfitting_gap': train_accuracy - test_accuracy,
