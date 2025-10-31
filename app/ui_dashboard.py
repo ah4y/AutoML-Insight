@@ -744,9 +744,25 @@ class AutoMLDashboard:
             st.session_state.X_processed = X_processed
             st.session_state.y_processed = y_processed
             
+            # NEW: Create train/test split for proper evaluation
+            from sklearn.model_selection import train_test_split
+            if task_type == "Classification":
+                X_train, X_test, y_train, y_test = train_test_split(
+                    X_processed, y_processed,
+                    test_size=0.3,  # 30% holdout for testing
+                    stratify=y_processed,
+                    random_state=st.session_state.random_seed
+                )
+                st.session_state.X_train = X_train
+                st.session_state.X_test = X_test
+                st.session_state.y_train = y_train
+                st.session_state.y_test = y_test
+                
+                st.info(f"📊 Split: Train={len(X_train)} samples, Test={len(X_test)} samples (30% holdout)")
+            
             # Train models
             if task_type == "Classification":
-                self.run_classification(X_processed, y_processed)
+                self.run_classification(X_train, y_train, X_test, y_test)
             else:
                 self.run_clustering(X_processed)
             
@@ -756,18 +772,18 @@ class AutoMLDashboard:
             st.error(f"Error running AutoML: {e}")
             logger.error(f"AutoML error: {e}", exc_info=True)
     
-    def run_classification(self, X, y):
-        """Run classification pipeline."""
-        st.info("🤖 Training classification models...")
+    def run_classification(self, X_train, y_train, X_test, y_test):
+        """Run classification pipeline with proper train/test split."""
+        st.info("🤖 Training classification models on training set...")
         
         # Get models
         models = get_supervised_models(st.session_state.random_seed)
         
         # Determine appropriate CV strategy based on data size
         from collections import Counter
-        class_counts = Counter(y)
+        class_counts = Counter(y_train)  # Use training set only
         min_class_count = min(class_counts.values())
-        total_samples = len(y)
+        total_samples = len(y_train)
         
         # Check if dataset is too small for CV
         if min_class_count < 2:
@@ -790,7 +806,7 @@ class AutoMLDashboard:
             n_repeats = 3
             st.info(f"Using {n_folds}-fold CV with {n_repeats} repeats")
         
-        # Evaluate models
+        # Evaluate models with holdout set
         evaluator = ClassificationEvaluator(n_folds=n_folds, n_repeats=n_repeats)
         results = {}
         
@@ -798,13 +814,14 @@ class AutoMLDashboard:
         for idx, (name, model) in enumerate(models.items()):
             st.text(f"Training {name}...")
             try:
-                result = evaluator.evaluate_model(model, X, y, name)
+                # NEW: Use holdout evaluation method
+                result = evaluator.evaluate_with_holdout(
+                    model, 
+                    X_train, y_train,
+                    X_test, y_test,
+                    name
+                )
                 results[name] = result
-                # Train a fresh model on all data for explainability later
-                from sklearn.base import clone
-                fresh_model = clone(model)
-                fresh_model.fit(X, y)
-                results[name]['trained_model'] = fresh_model
             except Exception as e:
                 logger.error(f"Error training {name}: {e}")
                 st.warning(f"⚠️ {name} failed: {str(e)[:100]}")
@@ -1006,16 +1023,83 @@ class AutoMLDashboard:
             st.plotly_chart(fig, use_container_width=True)
     
     def render_classification_results(self):
-        """Render classification results."""
+        """Render classification results with overfitting detection."""
         st.subheader("🤖 Classification Models")
         
         if not st.session_state.results:
             st.info("Run AutoML to see results")
             return
         
-        # AI-Powered Results Interpretation
+        # NEW: Display Overfitting Warnings First (Critical)
+        high_severity_warnings = []
+        for name, result in st.session_state.results.items():
+            if 'overfitting_warnings' in result:
+                warnings = result['overfitting_warnings']
+                if warnings.get('has_issues') and warnings.get('overall_severity') == 'HIGH':
+                    high_severity_warnings.append((name, warnings))
+        
+        if high_severity_warnings:
+            st.error("🚨 **CRITICAL: Overfitting/Data Leakage Detected!**")
+            st.markdown("""
+            **Your model results may be unrealistic due to:**
+            - Training-test data leakage
+            - Overfitting (memorizing instead of learning)
+            - Data quality issues
+            
+            **⚠️ DO NOT deploy these models without addressing issues below!**
+            """)
+            
+            for model_name, warnings in high_severity_warnings:
+                with st.expander(f"🚨 Issues with {model_name}", expanded=True):
+                    st.markdown(warnings['summary'])
+                    
+                    for warning in warnings['warnings']:
+                        if warning['severity'] == 'HIGH':
+                            st.markdown(f"**{warning['message']}**")
+                            st.markdown("**What to do:**")
+                            for rec in warning['recommendations']:
+                                st.markdown(f"- {rec}")
+        
+        # NEW: Train vs Test Performance Table
+        st.markdown("### 📊 Model Performance (Training vs Testing)")
+        
+        leaderboard_data = []
+        for name, result in st.session_state.results.items():
+            train_acc = result.get('train_accuracy', 0)
+            test_acc = result.get('test_accuracy', 0)
+            gap = result.get('overfitting_gap', train_acc - test_acc)
+            
+            # Color code the gap
+            gap_emoji = "🟢" if gap < 0.05 else "🟡" if gap < 0.10 else "🔴"
+            
+            leaderboard_data.append({
+                'Model': name,
+                'Train Acc': f"{train_acc:.4f}",
+                'Test Acc': f"{test_acc:.4f}",
+                'Gap': f"{gap_emoji} {gap:.4f}",
+                'CV Mean': f"{result.get('cv_accuracy_mean', 0):.4f}",
+                'CV Std': f"{result.get('cv_accuracy_std', 0):.4f}",
+                'Status': "✅ Good" if gap < 0.10 else "⚠️ Overfit"
+            })
+        
+        df_leaderboard = pd.DataFrame(leaderboard_data)
+        # Sort by Test Acc (the TRUE performance)
+        df_leaderboard = df_leaderboard.sort_values('Test Acc', ascending=False)
+        st.dataframe(df_leaderboard, use_container_width=True)
+        
+        st.info("""
+        **How to Read This Table:**
+        - **Train Acc**: Performance on training data
+        - **Test Acc**: Performance on unseen data (**THIS IS YOUR TRUE SCORE**)
+        - **Gap**: Train - Test (🟢 <5% = Good, 🟡 5-10% = Watch, 🔴 >10% = Overfit)
+        - **CV Mean/Std**: Cross-validation reliability
+        
+        ⚠️ **Always report Test Acc, never Train Acc!**
+        """)
+        
+        # AI-Powered Results Interpretation (Modified to include overfitting context)
         if st.session_state.ai_engine and st.session_state.ai_engine is not False:
-            with st.expander("🤖 AI Performance Analysis", expanded=True):
+            with st.expander("🤖 AI Performance Analysis", expanded=False):
                 with st.spinner("🤖 AI is interpreting your results..."):
                     try:
                         # Get best model performance
@@ -1099,10 +1183,19 @@ Be specific and actionable."""
                         logger.warning(f"Failed to generate AI performance insights: {e}")
                         st.error(f"AI analysis failed: {str(e)}")
         
-        # Leaderboard
+        # Leaderboard (OLD visualizer - keep for backward compat)
         st.subheader("Model Leaderboard")
+        
+        if not st.session_state.results:
+            st.warning("No models successfully completed training. Please check the training logs.")
+            return
+        
         evaluator = st.session_state.evaluator
         leaderboard = evaluator.get_leaderboard('accuracy')
+        
+        if not leaderboard:
+            st.warning("No leaderboard data available.")
+            return
         
         visualizer = Visualizer()
         fig = visualizer.plot_leaderboard(leaderboard, 'Accuracy')

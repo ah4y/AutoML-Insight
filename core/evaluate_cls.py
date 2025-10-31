@@ -192,3 +192,110 @@ class ClassificationEvaluator:
         leaderboard.sort(key=lambda x: x['score'], reverse=True)
         
         return leaderboard
+    
+    def evaluate_with_holdout(
+        self,
+        model: Any,
+        X_train: np.ndarray,
+        y_train: np.ndarray,
+        X_test: np.ndarray,
+        y_test: np.ndarray,
+        model_name: str
+    ) -> Dict[str, Any]:
+        """
+        Evaluate with proper train/test split to detect overfitting.
+        
+        Args:
+            model: Untrained model instance
+            X_train, y_train: Training data
+            X_test, y_test: Held-out test data
+            model_name: Model identifier
+            
+        Returns:
+            Dictionary with train/test scores and overfitting warnings
+        """
+        from core.overfitting_detector import OverfittingDetector
+        from sklearn.base import clone
+        
+        # Clone to avoid modifying original
+        model = clone(model)
+        
+        # 1. Cross-validation on training set only
+        cv = StratifiedKFold(n_splits=self.n_folds, shuffle=True, random_state=self.random_state)
+        cv_scores = cross_validate(
+            model, X_train, y_train,
+            cv=cv,
+            scoring={'accuracy': 'accuracy', 'f1_macro': 'f1_macro'},
+            return_estimator=False,
+            n_jobs=1
+        )
+        
+        # 2. Train on full training set
+        model.fit(X_train, y_train)
+        
+        # 3. Evaluate on training set (to detect overfitting)
+        y_train_pred = model.predict(X_train)
+        train_accuracy = accuracy_score(y_train, y_train_pred)
+        train_f1 = f1_score(y_train, y_train_pred, average='macro', zero_division=0)
+        
+        # 4. Evaluate on test set (true performance)
+        y_test_pred = model.predict(X_test)
+        test_accuracy = accuracy_score(y_test, y_test_pred)
+        test_f1 = f1_score(y_test, y_test_pred, average='macro', zero_division=0)
+        
+        # 5. Detect overfitting
+        detector = OverfittingDetector()
+        warnings = detector.detect_overfitting(
+            train_scores={'accuracy': train_accuracy, 'f1_macro': train_f1},
+            test_scores={'accuracy': test_accuracy, 'f1_macro': test_f1},
+            cv_scores={'accuracy': cv_scores['test_accuracy'].tolist()},
+            dataset_info={
+                'n_samples': len(X_train) + len(X_test),
+                'n_test_samples': len(X_test),
+                'n_classes': len(np.unique(y_train)),
+                'class_balance': {
+                    int(i): float(np.sum(y_test == i) / len(y_test)) 
+                    for i in np.unique(y_test)
+                }
+            }
+        )
+        
+        overfitting_report = detector.get_user_guidance()
+        
+        # Store results with backward compatibility
+        results = {
+            'model_name': model_name,
+            'train_accuracy': train_accuracy,
+            'train_f1_macro': train_f1,
+            'test_accuracy': test_accuracy,
+            'test_f1_macro': test_f1,
+            
+            # For compatibility with existing code
+            'accuracy': test_accuracy,
+            'f1_macro': test_f1,
+            'accuracy_mean': test_accuracy,
+            'f1_macro_mean': test_f1,
+            'roc_auc_ovr_mean': 0.0,  # Would need probability predictions
+            'log_loss_mean': 0.0,
+            
+            # CV scores
+            'cv_accuracy_mean': np.mean(cv_scores['test_accuracy']),
+            'cv_accuracy_std': np.std(cv_scores['test_accuracy']),
+            'cv_f1_mean': np.mean(cv_scores['test_f1_macro']),
+            
+            # Overfitting metrics
+            'overfitting_gap': train_accuracy - test_accuracy,
+            'overfitting_warnings': overfitting_report,
+            
+            # Model and predictions
+            'trained_model': model,
+            'predictions': y_test_pred,
+            'test_predictions': y_test_pred,
+            'true_labels': y_test,
+            'test_true': y_test
+        }
+        
+        # Store in self.results for leaderboard
+        self.results[model_name] = results
+        
+        return results
