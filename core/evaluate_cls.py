@@ -221,22 +221,79 @@ class ClassificationEvaluator:
         # Clone to avoid modifying original
         model = clone(model)
         
-        # OPTIMIZED: Skip CV for speed, do simple 5-fold for quick validation
-        cv = StratifiedKFold(n_splits=min(3, len(np.unique(y_train))), shuffle=True, random_state=self.random_state)
-        cv_scores_list = []
+        import logging
+        logger = logging.getLogger(__name__)
         
-        # Quick CV (only 3 folds, no repeats)
-        for train_idx, val_idx in cv.split(X_train, y_train):
-            X_cv_train, X_cv_val = X_train[train_idx], X_train[val_idx]
-            y_cv_train, y_cv_val = y_train[train_idx], y_train[val_idx]
-            
-            cv_model = clone(model)
-            cv_model.fit(X_cv_train, y_cv_train)
-            cv_pred = cv_model.predict(X_cv_val)
-            cv_scores_list.append(accuracy_score(y_cv_val, cv_pred))
+        # AUTO-SELECT CV STRATEGY based on dataset size
+        n_train = len(X_train)
         
-        # Train on full training set
-        model.fit(X_train, y_train)
+        # AGGRESSIVE optimization for large datasets
+        if n_train < 100:
+            n_folds = 2
+            cv_sample_size = n_train
+            cv_strategy = "Minimal CV (2-fold)"
+        elif n_train < 500:
+            n_folds = 3
+            cv_sample_size = n_train
+            cv_strategy = "Standard CV (3-fold)"
+        elif n_train < 2000:
+            n_folds = 3
+            cv_sample_size = n_train
+            cv_strategy = "Full CV (3-fold)"
+        elif n_train < 10000:
+            n_folds = 2
+            cv_sample_size = min(5000, n_train)
+            cv_strategy = f"Fast CV (2-fold on {cv_sample_size:,} samples)"
+        else:
+            # Very large datasets: Use small sample for CV
+            n_folds = 2
+            cv_sample_size = min(3000, n_train)  # Max 3K for CV
+            cv_strategy = f"Quick CV (2-fold on {cv_sample_size:,} samples)"
+        
+        # SMART SAMPLING: Use subset for CV if needed
+        X_cv, y_cv = X_train, y_train
+        
+        if cv_sample_size < n_train:
+            # Sample stratified subset for CV
+            from sklearn.model_selection import train_test_split
+            X_cv, _, y_cv, _ = train_test_split(
+                X_train, y_train,
+                train_size=cv_sample_size,
+                stratify=y_train,
+                random_state=42
+            )
+            logger.info(f"Large dataset ({n_train:,} samples). Using {cv_sample_size:,} samples for fast CV with {n_folds} folds.")
+        else:
+            X_cv, y_cv = X_train, y_train
+            logger.info(f"Dataset size: {n_train:,} samples. Using {cv_strategy}.")
+        
+        # Cross-validation on training set (or subset)
+        cv = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=self.random_state)
+        
+        try:
+            logger.info(f"Running {n_folds}-fold CV for {model_name}... ({cv_strategy})")
+            cv_results = cross_validate(
+                model, X_cv, y_cv,
+                cv=cv,
+                scoring={'accuracy': 'accuracy', 'f1_macro': 'f1_macro'},
+                return_estimator=False,
+                n_jobs=1,
+                verbose=0
+            )
+            cv_scores_list = cv_results['test_accuracy'].tolist()
+            logger.info(f"{model_name} CV: {np.mean(cv_scores_list):.4f} ± {np.std(cv_scores_list):.4f}")
+        except Exception as e:
+            logger.warning(f"CV failed for {model_name}: {e}")
+            cv_scores_list = [0.0]
+        
+        # Train on FULL training set
+        logger.info(f"Training {model_name} on full set ({n_train} samples)...")
+        try:
+            model.fit(X_train, y_train)
+            logger.info(f"{model_name} complete!")
+        except Exception as e:
+            logger.error(f"Error training {model_name}: {e}")
+            raise
         
         # Evaluate on training set (to detect overfitting)
         y_train_pred = model.predict(X_train)
@@ -287,6 +344,9 @@ class ClassificationEvaluator:
             'cv_accuracy_mean': np.mean(cv_scores_list),
             'cv_accuracy_std': np.std(cv_scores_list),
             'cv_f1_mean': test_f1,  # Approximate
+            'cv_strategy': cv_strategy,  # NEW: CV strategy info
+            'cv_folds': n_folds,  # NEW: Number of folds used
+            'cv_sample_size': cv_sample_size,  # NEW: Sample size for CV
             
             # Overfitting metrics
             'overfitting_gap': train_accuracy - test_accuracy,

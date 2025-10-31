@@ -810,9 +810,21 @@ class AutoMLDashboard:
         evaluator = ClassificationEvaluator(n_folds=n_folds, n_repeats=n_repeats)
         results = {}
         
+        # NEW: Display CV Strategy Info
+        st.info(f"📊 **Training {len(models)} models** with automatic CV strategy selection...")
+        st.info(f"⏱️ **Dataset**: {len(X_train):,} training samples, {len(X_test):,} test samples")
+        
         progress_bar = st.progress(0)
+        status_text = st.empty()
+        cv_strategy_displayed = False
+        
+        import time
+        start_time = time.time()
+        
         for idx, (name, model) in enumerate(models.items()):
-            st.text(f"Training {name}...")
+            model_start = time.time()
+            status_text.text(f"⏳ Training {name}... ({idx+1}/{len(models)})")
+            
             try:
                 # NEW: Use holdout evaluation method
                 result = evaluator.evaluate_with_holdout(
@@ -822,11 +834,25 @@ class AutoMLDashboard:
                     name
                 )
                 results[name] = result
+                
+                # Show timing
+                model_time = time.time() - model_start
+                status_text.text(f"✅ {name} complete in {model_time:.1f}s")
+                
+                # Display CV strategy once (from first successful model)
+                if not cv_strategy_displayed and 'cv_strategy' in result:
+                    st.success(f"📊 **CV Strategy**: {result['cv_strategy']}")
+                    cv_strategy_displayed = True
+                    
             except Exception as e:
                 logger.error(f"Error training {name}: {e}")
                 st.warning(f"⚠️ {name} failed: {str(e)[:100]}")
             
             progress_bar.progress((idx + 1) / len(models))
+        
+        # Display total training time
+        total_time = time.time() - start_time
+        status_text.text(f"✅ All models trained in {total_time:.1f}s (avg: {total_time/len(results):.1f}s per model)")
         
         # Check if we have any successful results
         if not results:
@@ -1086,6 +1112,18 @@ class AutoMLDashboard:
         # Sort by Test Acc (the TRUE performance)
         df_leaderboard = df_leaderboard.sort_values('Test Acc', ascending=False)
         st.dataframe(df_leaderboard, use_container_width=True)
+        
+        # NEW: Display CV Strategy Report
+        if leaderboard_data and 'cv_strategy' in st.session_state.results[leaderboard_data[0]['Model']]:
+            first_result = st.session_state.results[leaderboard_data[0]['Model']]
+            cv_info = f"""
+            **📊 Cross-Validation Strategy Report:**
+            - **Strategy**: {first_result.get('cv_strategy', 'Standard CV')}
+            - **Folds**: {first_result.get('cv_folds', 'N/A')}
+            - **Training Samples**: {first_result.get('cv_sample_size', len(st.session_state.X_train)):,}
+            - **Purpose**: Ensures model reliability and detects overfitting
+            """
+            st.info(cv_info)
         
         st.info("""
         **How to Read This Table:**
