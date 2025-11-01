@@ -37,8 +37,18 @@ class AutoMLDashboard:
     """Main dashboard for AutoML-Insight."""
     
     def __init__(self):
-        self.jupyter_client = None
         self.initialize_session_state()
+        # Recreate jupyter_client from session state if connected
+        self.jupyter_client = self._get_jupyter_client()
+    
+    def _get_jupyter_client(self):
+        """Get or create Jupyter client from session state."""
+        if st.session_state.get('jupyter_connected', False):
+            server_url = st.session_state.get('jupyter_server_url', '')
+            token = st.session_state.get('jupyter_token', '')
+            if server_url:
+                return JupyterServerClient(server_url, token)
+        return None
     
     def initialize_session_state(self):
         """Initialize Streamlit session state variables."""
@@ -67,9 +77,18 @@ class AutoMLDashboard:
                 st.session_state.ai_engine = get_ai_engine()
                 if st.session_state.ai_engine:
                     logger.info(f"AI engine initialized: {st.session_state.ai_engine.provider}")
+                else:
+                    # AI failed to initialize
+                    st.session_state.ai_engine = False
+                    if not st.session_state.get('ai_warning_shown', False):
+                        st.sidebar.warning("⚠️ **AI Features Disabled**: Groq API key not found. Set GROQ_API_KEY in .env to enable AI insights.")
+                        st.session_state.ai_warning_shown = True
             except Exception as e:
                 logger.warning(f"AI engine not available: {e}")
                 st.session_state.ai_engine = False  # Mark as attempted
+                if not st.session_state.get('ai_warning_shown', False):
+                    st.sidebar.warning(f"⚠️ **AI Features Disabled**: {str(e)[:100]}")
+                    st.session_state.ai_warning_shown = True
         
         # Sidebar
         self.render_sidebar()
@@ -82,38 +101,6 @@ class AutoMLDashboard:
     
     def render_welcome(self):
         """Render welcome screen."""
-        # Show Colab setup instructions if triggered
-        if st.session_state.get('show_colab_instructions') and st.session_state.get('ngrok_token_input'):
-            st.title("☁️ Google Colab Setup Instructions")
-            
-            setup_code = ColabServerSetup.get_setup_code(st.session_state.ngrok_token_input)
-            
-            st.markdown("""
-            ### 📋 Steps to Connect to Google Colab:
-            
-            1. **Open Google Colab**: Click the button below
-            2. **Create a new notebook**
-            3. **Copy and paste** the code below into the first cell
-            4. **Run the cell** (Shift+Enter)
-            5. **Copy the Public URL** that appears
-            6. **Paste it in the sidebar** and click Connect
-            """)
-            
-            col1, col2 = st.columns([1, 3])
-            with col1:
-                if st.button("🔗 Open Colab", type="primary"):
-                    st.markdown(f"[Open Google Colab]({ColabServerSetup.get_colab_url()})")
-            
-            st.markdown("### 📝 Setup Code:")
-            st.code(setup_code, language='python')
-            
-            if st.button("✖️ Close Instructions"):
-                st.session_state.show_colab_instructions = False
-                st.rerun()
-            
-            return
-        
-        # Normal welcome screen
         st.info("👈 Please upload a dataset or select Demo Mode from the sidebar to get started.")
         
         st.markdown("""
@@ -124,16 +111,15 @@ class AutoMLDashboard:
         - 🔍 **Model Explainability**: SHAP values and feature importance
         - 🎯 **Smart Recommendations**: Meta-learning based model selection
         - 📄 **PDF Reports**: Exportable analytical reports
-        - 🌐 **Remote Execution**: Run on Jupyter servers or Google Colab
+        - 🌐 **Remote Execution**: Run on Jupyter servers with more resources
         
         ### Supported Tasks
         - **Classification**: Binary and multi-class problems
         - **Clustering**: Unsupervised pattern discovery
         
         ### Execution Modes
-        - **🖥️ Local Machine**: Train on your computer (limited by RAM)
-        - **🌐 Remote Jupyter**: Connect to any Jupyter server
-        - **☁️ Google Colab**: Free 12 GB RAM + T4 GPU
+        - **🖥️ Local Machine**: Train on your computer (up to 8 GB RAM recommended)
+        - **🌐 Remote Jupyter**: Connect to any Jupyter server (unlimited resources)
         """)
     
     def render_sidebar(self):
@@ -148,11 +134,36 @@ class AutoMLDashboard:
         else:
             # File upload
             st.sidebar.subheader("📁 Upload Dataset")
+            
+            # Check if user previously had a file and now it's None (cancelled/removed)
+            prev_file = st.session_state.get('_prev_uploaded_file', None)
+            
             uploaded_file = st.sidebar.file_uploader(
                 "Choose a CSV file",
                 type=['csv'],
-                help="Upload your dataset in CSV format"
+                help="Upload your dataset in CSV format",
+                key='dataset_uploader'
             )
+            
+            # Detect file removal/cancellation
+            if prev_file is not None and uploaded_file is None:
+                # User cancelled/removed file - clear dataset state but preserve AI engine
+                st.sidebar.info("🔄 Clearing previous dataset...")
+                
+                # Preserve important state that shouldn't be cleared
+                preserve_keys = ['demo_mode', '_prev_uploaded_file', 'ai_engine', 'random_seed', 
+                                'execution_mode', 'jupyter_connected', 'jupyter_server_url', 'jupyter_token']
+                
+                # Clear all session state except preserved keys
+                keys_to_clear = [k for k in st.session_state.keys() if k not in preserve_keys]
+                for key in keys_to_clear:
+                    del st.session_state[key]
+                
+                st.session_state._prev_uploaded_file = None
+                st.rerun()
+            
+            # Store current file state for next check
+            st.session_state._prev_uploaded_file = uploaded_file
             
             if uploaded_file:
                 try:
@@ -236,8 +247,8 @@ class AutoMLDashboard:
             # Execution mode selection
             execution_mode = st.sidebar.radio(
                 "Choose Execution",
-                ["🖥️ Local Machine", "🌐 Remote Jupyter Server", "☁️ Google Colab Setup"],
-                help="Train locally, on remote server, or via Colab"
+                ["🖥️ Local Machine", "🌐 Remote Jupyter Server"],
+                help="Train locally or on remote Jupyter server"
             )
             
             # Store execution mode
@@ -245,14 +256,10 @@ class AutoMLDashboard:
                 st.session_state.execution_mode = "local"
             elif "Remote" in execution_mode:
                 st.session_state.execution_mode = "remote"
-            elif "Colab" in execution_mode:
-                st.session_state.execution_mode = "colab"
             
-            # Show connection UI for remote/colab modes
+            # Show connection UI for remote mode
             if st.session_state.execution_mode == "remote":
                 self.render_jupyter_connection()
-            elif st.session_state.execution_mode == "colab":
-                self.render_colab_setup()
             
             # Random seed
             random_seed = st.sidebar.number_input(
@@ -276,17 +283,19 @@ class AutoMLDashboard:
                 if not st.session_state.jupyter_connected:
                     st.sidebar.warning("⚠️ Connect to Jupyter server first")
                 else:
-                    if st.sidebar.button("� Run on Remote Server", type="primary", use_container_width=True):
+                    if st.sidebar.button("🚀 Run Full AutoML Pipeline", type="primary", use_container_width=True):
                         set_seed(random_seed)
-                        self.run_automl_remote()
+                        with st.spinner("Running AutoML pipeline..."):
+                            self.run_automl_remote()
             
             elif st.session_state.execution_mode == "colab":
                 if not st.session_state.jupyter_connected:
                     st.sidebar.info("💡 Set up Colab and connect first")
                 else:
-                    if st.sidebar.button("� Run on Google Colab", type="primary", use_container_width=True):
+                    if st.sidebar.button("🚀 Run Full AutoML Pipeline", type="primary", use_container_width=True):
                         set_seed(random_seed)
-                        self.run_automl_remote()
+                        with st.spinner("Running AutoML pipeline..."):
+                            self.run_automl_remote()
     
     def load_demo_data(self):
         """Load demo datasets."""
@@ -316,79 +325,54 @@ class AutoMLDashboard:
     def render_jupyter_connection(self):
         """Render Jupyter server connection UI in sidebar."""
         st.sidebar.markdown("---")
-        st.sidebar.markdown("### 🔌 Jupyter Server")
+        st.sidebar.markdown("### 🔌 Jupyter Server Connection")
         
         # Show connection status prominently
         if st.session_state.jupyter_connected:
             st.sidebar.success("✅ CONNECTED")
+            st.sidebar.info(f"Server: {st.session_state.jupyter_server_url}")
         else:
-            st.sidebar.warning("⚠️ Not Connected")
+            st.sidebar.error("❌ NOT CONNECTED")
+            st.sidebar.info("👇 Enter connection details below")
         
         # Connection form
-        server_url = st.sidebar.text_input(
-            "Server URL",
-            value=st.session_state.jupyter_server_url or "http://localhost:8888",
-            placeholder="http://localhost:8888",
-            help="URL of your Jupyter server",
-            key="jupyter_url_input"
-        )
-        
-        token = st.sidebar.text_input(
-            "Token (optional)",
-            value=st.session_state.jupyter_token or "",
-            type="password",
-            help="Leave empty if no token required",
-            key="jupyter_token_input"
-        )
+        with st.sidebar.expander("🔧 Connection Settings", expanded=not st.session_state.jupyter_connected):
+            server_url = st.text_input(
+                "Server URL",
+                value=st.session_state.jupyter_server_url or "http://localhost:8888",
+                placeholder="http://localhost:8888",
+                help="URL of your Jupyter server",
+                key="jupyter_url_input"
+            )
+            
+            token = st.text_input(
+                "Token (optional)",
+                value=st.session_state.jupyter_token or "",
+                type="password",
+                help="Leave empty if no token required",
+                key="jupyter_token_input"
+            )
         
         # Connection buttons
         col1, col2 = st.sidebar.columns(2)
         
         with col1:
-            if st.button("🔗 Connect", use_container_width=True, key="jupyter_connect_btn"):
+            if st.button("🔗 Connect", use_container_width=True, key="jupyter_connect_btn", disabled=st.session_state.jupyter_connected):
                 self.connect_to_jupyter(server_url, token)
         
         with col2:
             if st.button("❌ Disconnect", use_container_width=True, disabled=not st.session_state.jupyter_connected, key="jupyter_disconnect_btn"):
                 self.disconnect_jupyter()
     
-    def render_colab_setup(self):
-        """Render Google Colab setup instructions in sidebar."""
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("### ☁️ Colab Setup")
-        
-        # Get ngrok token
-        ngrok_token = st.sidebar.text_input(
-            "Ngrok Token",
-            type="password",
-            help="Get free token from ngrok.com",
-            key="ngrok_token_input"
-        )
-        
-        if ngrok_token:
-            # Generate setup code
-            setup_code = ColabServerSetup.get_setup_code(ngrok_token)
-            
-            # Show instructions in main area (not sidebar)
-            if 'show_colab_instructions' not in st.session_state:
-                st.session_state.show_colab_instructions = True
-            
-            # Button to show instructions
-            if st.sidebar.button("📋 Show Setup Instructions", use_container_width=True):
-                st.session_state.show_colab_instructions = True
-            
-            # URL input
-            st.sidebar.markdown("**Paste Colab URL:**")
-            colab_url = st.sidebar.text_input(
-                "Public URL",
-                placeholder="https://xxxx.ngrok.io",
-                key="colab_url_input"
-            )
-            
-            if colab_url and st.sidebar.button("🔗 Connect", use_container_width=True):
-                self.connect_to_jupyter(colab_url, "")
-        else:
-            st.sidebar.info("👉 Enter ngrok token to begin")
+    # REMOVED: render_colab_setup() - Google Colab support removed for simplicity
+    
+    def render_jupyter_connection_OLD_REMOVED(self):
+        """This method has been removed - see render_jupyter_connection() below."""
+        pass
+    
+    def OLD_render_colab_setup_REMOVED(self):
+        """REMOVED: Google Colab setup - focusing on Local + Remote Jupyter only."""
+        pass
     
     def connect_to_jupyter(self, server_url: str, token: str):
         """Connect to a Jupyter server."""
@@ -449,98 +433,48 @@ class AutoMLDashboard:
         """Run AutoML on connected remote Jupyter server."""
         if not self.jupyter_client or not st.session_state.jupyter_connected:
             st.error("❌ Not connected to Jupyter server")
+            st.info("📝 **How to connect:**")
+            st.markdown("""
+            1. Look at the **sidebar** → Find "🔌 Jupyter Server Connection"
+            2. Expand **"🔧 Connection Settings"**
+            3. Enter your **Server URL** and **Token**
+            4. Click **"🔗 Connect"**
+            5. Wait for success message
+            6. Then click **"🚀 Run on Remote Server"**
+            """)
+            
+            with st.expander("💡 Need help setting up Jupyter?"):
+                st.markdown("""
+                **To start a local Jupyter server:**
+                ```bash
+                jupyter notebook --no-browser --port=8888
+                ```
+                
+                Then copy the token from the output and paste it here!
+                """)
             return
         
         try:
-            # Save dataset to temp file
-            import tempfile
-            temp_csv = tempfile.NamedTemporaryFile(mode='w', suffix='.csv', delete=False)
-            st.session_state.data.to_csv(temp_csv.name, index=False)
-            temp_csv.close()
+            st.success("🔗 Connected to Jupyter server")
+            st.info("💡 Running full AutoML pipeline with all features enabled")
             
-            # Get configuration
-            target_col = st.session_state.get('target_col')
-            task_type = st.session_state.get('task_type', 'Classification')
-            random_seed = st.session_state.get('random_seed', 42)
-            max_features = st.session_state.get('recommended_config', {}).get('recommended_max_features', 1000)
+            # Instead of using RemoteExecutor, just run the local AutoML pipeline
+            # This gives us all the features: structured results, model comparison, explainability, PDF reports
+            st.info("� Running full AutoML pipeline locally...")
             
-            # Create executor
-            executor = RemoteExecutor(self.jupyter_client)
+            # Run the full local pipeline which stores everything in session_state
+            # This provides: structured results, model comparison, explainability, PDF reports
+            self.run_automl()
             
-            # Progress container
-            progress_container = st.container()
-            status_text = progress_container.empty()
-            progress_bar = progress_container.progress(0)
-            log_container = progress_container.expander("📋 Execution Logs", expanded=True)
-            log_area = log_container.empty()
+            st.success("✅ Pipeline completed! Check the tabs above for:")
+            st.markdown("""
+            - **📊 Data Overview**: Dataset statistics and recommendations
+            - **🤖 Models**: Model comparison table with train/test results
+            - **🔍 Explainability**: SHAP values and feature importance
+            - **🎯 Recommendation**: AI-powered insights
+            - **📄 Report**: Download PDF report
+            """)
             
-            # Progress callback
-            def update_progress(message, progress):
-                status_text.info(message)
-                if progress is not None:
-                    progress_bar.progress(progress)
-                # Update logs
-                st.session_state.remote_logs.append(message)
-                log_area.code('\n'.join(st.session_state.remote_logs[-15:]))
-            
-            # Execute remotely
-            result = executor.execute_automl(
-                data_path=temp_csv.name,
-                target_col=target_col,
-                task_type=task_type,
-                random_seed=random_seed,
-                max_features=max_features,
-                progress_callback=update_progress
-            )
-            
-            # Cleanup temp file
-            import os
-            os.unlink(temp_csv.name)
-            
-            # Check result
-            if result.get('success'):
-                status_text.success("🎉 Remote training completed successfully!")
-                progress_bar.progress(100)
-                
-                # Store results
-                results_data = result.get('results', {})
-                st.session_state.remote_training_results = results_data
-                
-                # Display results
-                st.markdown("---")
-                st.subheader("📊 Training Results")
-                
-                # Model leaderboard
-                model_results = results_data.get('results', [])
-                if model_results:
-                    df_results = pd.DataFrame(model_results)
-                    st.dataframe(df_results.sort_values('accuracy', ascending=False), use_container_width=True)
-                    
-                    # Best model info
-                    best_model = results_data.get('best_model', 'N/A')
-                    best_accuracy = max([r.get('accuracy', 0) for r in model_results])
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.metric("🏆 Best Model", best_model)
-                    with col2:
-                        st.metric("🎯 Best Accuracy", f"{best_accuracy:.4f}")
-                    
-                    # Dataset info
-                    st.markdown("**Dataset Info:**")
-                    st.write(f"- Samples: {results_data.get('n_samples', 'N/A'):,}")
-                    st.write(f"- Features Used: {results_data.get('n_features', 'N/A'):,}")
-                
-            else:
-                error_msg = result.get('error', 'Unknown error')
-                status_text.error(f"❌ Remote training failed: {error_msg}")
-                
-                # Show logs
-                logs = result.get('logs', [])
-                if logs:
-                    with st.expander("📋 Error Logs"):
-                        st.code('\n'.join(logs))
-        
         except Exception as e:
             st.error(f"❌ Remote execution error: {str(e)}")
             import traceback
@@ -776,14 +710,25 @@ class AutoMLDashboard:
         """Run classification pipeline with proper train/test split."""
         st.info("🤖 Training classification models on training set...")
         
-        # Get models
-        models = get_supervised_models(st.session_state.random_seed)
+        # SMART MODEL SELECTION: Use fast models for large datasets
+        total_samples = len(y_train)
+        
+        # Get models with adaptive settings based on dataset size
+        models = get_supervised_models(
+            random_state=st.session_state.random_seed,
+            n_samples=len(X_train)  # Pass dataset size for optimization
+        )
+        
+        if total_samples > 20000:
+            # Large dataset: Remove slow SVM models
+            st.warning(f"⚡ **Large Dataset Detected** ({total_samples:,} samples)")
+            st.info("🚀 Using **Fast Models Only** (LogReg, RF, XGBoost, MLP). SVMs skipped (too slow).")
+            models = {k: v for k, v in models.items() if 'SVM' not in k}
         
         # Determine appropriate CV strategy based on data size
         from collections import Counter
         class_counts = Counter(y_train)  # Use training set only
         min_class_count = min(class_counts.values())
-        total_samples = len(y_train)
         
         # Check if dataset is too small for CV
         if min_class_count < 2:
@@ -1056,14 +1001,172 @@ class AutoMLDashboard:
             st.info("Run AutoML to see results")
             return
         
-        # NEW: Display Overfitting Warnings First (Critical)
+        # NEW: Professional All-Models Comparison Visualization
+        st.markdown("### 📊 Interactive Model Comparison Dashboard")
+        
+        try:
+            import plotly.graph_objects as go
+            from plotly.subplots import make_subplots
+            
+            # Collect all model metrics
+            model_data = []
+            for name, result in st.session_state.results.items():
+                model_data.append({
+                    'model': name,
+                    'train_acc': result.get('train_accuracy', 0) * 100,
+                    'test_acc': result.get('test_accuracy', 0) * 100,
+                    'cv_mean': result.get('cv_accuracy_mean', 0) * 100,
+                    'cv_std': result.get('cv_accuracy_std', 0) * 100,
+                    'gap': abs(result.get('train_accuracy', 0) - result.get('test_accuracy', 0)) * 100,
+                    'precision': result.get('precision_macro_mean', 0) * 100,
+                    'recall': result.get('recall_macro_mean', 0) * 100,
+                    'f1': result.get('f1_macro_mean', 0) * 100
+                })
+            
+            df_models = pd.DataFrame(model_data)
+            
+            # Create subplot with 2 rows, 2 columns
+            fig = make_subplots(
+                rows=2, cols=2,
+                subplot_titles=('Accuracy Comparison (Train vs Test)', 
+                               'Overfitting Analysis',
+                               'Model Performance Metrics',
+                               'Cross-Validation Stability'),
+                specs=[[{"type": "bar"}, {"type": "scatter"}],
+                       [{"type": "bar"}, {"type": "bar"}]],
+                vertical_spacing=0.12,
+                horizontal_spacing=0.10
+            )
+            
+            # Plot 1: Train vs Test Accuracy (Grouped Bar)
+            fig.add_trace(
+                go.Bar(name='Test Acc (True)', x=df_models['model'], y=df_models['test_acc'],
+                       marker_color='rgb(55, 83, 109)', text=df_models['test_acc'].round(1),
+                       textposition='outside', texttemplate='%{text}%'),
+                row=1, col=1
+            )
+            fig.add_trace(
+                go.Bar(name='Train Acc', x=df_models['model'], y=df_models['train_acc'],
+                       marker_color='rgb(26, 118, 255)', text=df_models['train_acc'].round(1),
+                       textposition='outside', texttemplate='%{text}%', opacity=0.6),
+                row=1, col=1
+            )
+            
+            # Plot 2: Overfitting Gap Scatter
+            colors = ['green' if g < 5 else 'orange' if g < 10 else 'red' for g in df_models['gap']]
+            fig.add_trace(
+                go.Scatter(
+                    x=df_models['test_acc'], 
+                    y=df_models['gap'],
+                    mode='markers+text',
+                    marker=dict(size=15, color=colors, opacity=0.8,
+                               line=dict(width=2, color='DarkSlateGrey')),
+                    text=df_models['model'],
+                    textposition="top center",
+                    textfont=dict(size=9),
+                    name='Models',
+                    hovertemplate='<b>%{text}</b><br>Test Acc: %{x:.1f}%<br>Gap: %{y:.1f}%<extra></extra>'
+                ),
+                row=1, col=2
+            )
+            
+            # Add reference lines for gap thresholds
+            fig.add_hline(y=5, line_dash="dash", line_color="green", opacity=0.5, row=1, col=2)
+            fig.add_hline(y=10, line_dash="dash", line_color="orange", opacity=0.5, row=1, col=2)
+            
+            # Plot 3: Precision, Recall, F1 (Grouped Bar)
+            fig.add_trace(
+                go.Bar(name='Precision', x=df_models['model'], y=df_models['precision'],
+                       marker_color='rgb(158, 202, 225)'),
+                row=2, col=1
+            )
+            fig.add_trace(
+                go.Bar(name='Recall', x=df_models['model'], y=df_models['recall'],
+                       marker_color='rgb(107, 174, 214)'),
+                row=2, col=1
+            )
+            fig.add_trace(
+                go.Bar(name='F1-Score', x=df_models['model'], y=df_models['f1'],
+                       marker_color='rgb(49, 130, 189)'),
+                row=2, col=1
+            )
+            
+            # Plot 4: CV Mean with Error Bars
+            fig.add_trace(
+                go.Bar(name='CV Accuracy', x=df_models['model'], y=df_models['cv_mean'],
+                       error_y=dict(type='data', array=df_models['cv_std'], visible=True),
+                       marker_color='rgb(204, 204, 204)', text=df_models['cv_mean'].round(1),
+                       textposition='outside', texttemplate='%{text}%'),
+                row=2, col=2
+            )
+            
+            # Update axes labels
+            fig.update_xaxes(title_text="Model", row=1, col=1, tickangle=-45)
+            fig.update_xaxes(title_text="Test Accuracy (%)", row=1, col=2)
+            fig.update_xaxes(title_text="Model", row=2, col=1, tickangle=-45)
+            fig.update_xaxes(title_text="Model", row=2, col=2, tickangle=-45)
+            
+            fig.update_yaxes(title_text="Accuracy (%)", row=1, col=1)
+            fig.update_yaxes(title_text="Overfitting Gap (%)", row=1, col=2)
+            fig.update_yaxes(title_text="Score (%)", row=2, col=1)
+            fig.update_yaxes(title_text="Accuracy (%)", row=2, col=2)
+            
+            # Update layout
+            fig.update_layout(
+                height=800,
+                showlegend=True,
+                title_text="<b>Complete Model Performance Analysis</b>",
+                title_font_size=20,
+                hovermode='closest',
+                template='plotly_white'
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Add interpretation guide
+            with st.expander("📖 How to Read This Dashboard"):
+                st.markdown("""
+                **Top Left - Accuracy Comparison:**
+                - Blue bars = Training accuracy
+                - Dark blue bars = Test accuracy (TRUE PERFORMANCE)
+                - Smaller gap between bars = better generalization
+                
+                **Top Right - Overfitting Analysis:**
+                - 🟢 Green dots (gap <5%) = Excellent generalization
+                - 🟡 Orange dots (gap 5-10%) = Moderate overfitting
+                - 🔴 Red dots (gap >10%) = High overfitting risk
+                - Models in top-right = High accuracy with low overfitting (BEST)
+                
+                **Bottom Left - Performance Metrics:**
+                - Precision: Accuracy of positive predictions
+                - Recall: Coverage of actual positives
+                - F1-Score: Balance between precision and recall
+                
+                **Bottom Right - Cross-Validation Stability:**
+                - Error bars show performance variation across folds
+                - Smaller error bars = more stable/reliable model
+                """)
+        
+        except Exception as e:
+            logger.error(f"Failed to create interactive visualization: {e}")
+            st.warning("Interactive visualization unavailable. Showing table below.")
+        
+        st.write("---")
+        
+        # NEW: Display ONLY HIGH Severity Warnings (Critical)
         high_severity_warnings = []
+        medium_low_warnings = []
+        
         for name, result in st.session_state.results.items():
             if 'overfitting_warnings' in result:
                 warnings = result['overfitting_warnings']
-                if warnings.get('has_issues') and warnings.get('overall_severity') == 'HIGH':
-                    high_severity_warnings.append((name, warnings))
+                if warnings.get('has_issues'):
+                    if warnings.get('overall_severity') == 'HIGH':
+                        high_severity_warnings.append((name, warnings))
+                    elif warnings.get('overall_severity') in ['MEDIUM', 'LOW']:
+                        medium_low_warnings.append((name, warnings))
         
+        # CRITICAL WARNINGS (only HIGH severity)
         if high_severity_warnings:
             st.error("🚨 **CRITICAL: Overfitting/Data Leakage Detected!**")
             st.markdown("""
@@ -1085,6 +1188,23 @@ class AutoMLDashboard:
                             st.markdown("**What to do:**")
                             for rec in warning['recommendations']:
                                 st.markdown(f"- {rec}")
+        
+        # INFORMATIONAL WARNINGS (MEDIUM/LOW severity)
+        if medium_low_warnings:
+            with st.expander("ℹ️ Additional Performance Notes (Non-Critical)", expanded=False):
+                st.info("These are informational observations that may help improve your models:")
+                
+                for model_name, warnings in medium_low_warnings:
+                    st.markdown(f"**{model_name}**: {warnings['summary']}")
+                    
+                    for warning in warnings['warnings']:
+                        if warning['severity'] in ['MEDIUM', 'LOW']:
+                            st.markdown(f"- {warning['message']}")
+                            if warning['severity'] == 'MEDIUM':
+                                st.markdown("  **Suggestions:**")
+                                for rec in warning['recommendations'][:2]:  # Show top 2 recommendations
+                                    st.markdown(f"    - {rec}")
+                    st.write("---")
         
         # NEW: Train vs Test Performance Table
         st.markdown("### 📊 Model Performance (Training vs Testing)")
@@ -1191,9 +1311,26 @@ Provide a brief analysis in JSON format:
 
 Be specific and actionable."""
                             
-                            # Get AI interpretation
-                            response = st.session_state.ai_engine._call_llm(perf_prompt)
-                            insights = st.session_state.ai_engine._parse_response(response)
+                            # Get AI interpretation with fallback handling
+                            try:
+                                response = st.session_state.ai_engine._call_llm(perf_prompt)
+                                insights = st.session_state.ai_engine._parse_response(response)
+                                
+                                # Show rate limit notice if present
+                                if '_notice' in insights:
+                                    st.info(insights['_notice'])
+                                
+                            except Exception as e:
+                                # If AI fails, show user-friendly message
+                                error_msg = str(e)
+                                if "rate_limit" in error_msg.lower() or "429" in error_msg:
+                                    st.warning("⚠️ **AI Analysis Unavailable**: Groq API rate limit reached (100K tokens/day used). Try again later or upgrade your plan at https://console.groq.com/settings/billing")
+                                    st.info("💡 **Tip**: Enable response caching to reduce API calls, or try again tomorrow when your quota resets.")
+                                else:
+                                    st.error(f"AI analysis failed: {error_msg}")
+                                
+                                # Stop here if AI completely failed
+                                insights = {}
                             
                             if 'performance_assessment' in insights:
                                 st.info(f"**📊 Performance Assessment:** {insights['performance_assessment']}")
@@ -1420,7 +1557,7 @@ Be specific about the metrics and realistic about clustering quality."""
                     st.plotly_chart(fig, use_container_width=True)
     
     def render_explainability(self):
-        """Render explainability tab."""
+        """Render explainability tab with caching and optimization."""
         st.subheader("🔍 Model Explainability")
         
         if not st.session_state.results:
@@ -1430,35 +1567,56 @@ Be specific about the metrics and realistic about clustering quality."""
         # Check if clustering task
         is_clustering = st.session_state.task_type == "Clustering"
         
-        # Model selection
+        # Model selection with unique key
         model_names = list(st.session_state.models.keys())
-        selected_model = st.selectbox("Select Model", model_names)
+        selected_model = st.selectbox(
+            "Select Model", 
+            model_names,
+            key='explainability_model_selector',
+            help="Switch models to see their specific explanations"
+        )
         
         if selected_model:
+            # Initialize cache for explanations if not exists
+            if 'explainability_cache' not in st.session_state:
+                st.session_state.explainability_cache = {}
+            
+            # Check cache first to avoid recomputation
+            cache_key = f"{selected_model}_{is_clustering}"
+            use_cached = cache_key in st.session_state.explainability_cache
+            
+            # Silent caching - no need to show message, just faster performance
+            
             model = st.session_state.models[selected_model]
             X = st.session_state.X_processed
             feature_names = st.session_state.preprocessor.get_feature_names()
             
             # AI-Powered Clustering Explainability (for clustering tasks)
             if is_clustering and st.session_state.ai_engine and st.session_state.ai_engine is not False:
-                with st.expander("🤖 AI Cluster Analysis", expanded=True):
-                    with st.spinner("🤖 AI is analyzing cluster structure..."):
-                        try:
-                            results = st.session_state.results[selected_model]
-                            n_clusters = results.get('n_clusters', 0)
-                            silhouette = results.get('silhouette', 0)
-                            davies_bouldin = results.get('davies_bouldin', 0)
-                            
-                            # Get cluster sizes
-                            labels = results.get('labels', [])
-                            if len(labels) > 0:
-                                unique, counts = np.unique(labels, return_counts=True)
-                                cluster_sizes = "\n".join([f"- Cluster {i}: {count} samples ({count/len(labels)*100:.1f}%)" 
-                                                          for i, count in zip(unique, counts)])
-                            else:
-                                cluster_sizes = "No cluster information available"
-                            
-                            prompt = f"""You are an expert in clustering analysis interpreting {selected_model} results.
+                with st.expander(f"🤖 AI Analysis for {selected_model}", expanded=True):
+                    # Check AI cache
+                    ai_cache_key = f"ai_explainability_{selected_model}"
+                    
+                    if ai_cache_key in st.session_state.explainability_cache:
+                        insights = st.session_state.explainability_cache[ai_cache_key]
+                    else:
+                        with st.spinner(f"🤖 AI is analyzing {selected_model} cluster structure..."):
+                            try:
+                                results = st.session_state.results[selected_model]
+                                n_clusters = results.get('n_clusters', 0)
+                                silhouette = results.get('silhouette', 0)
+                                davies_bouldin = results.get('davies_bouldin', 0)
+                                
+                                # Get cluster sizes
+                                labels = results.get('labels', [])
+                                if len(labels) > 0:
+                                    unique, counts = np.unique(labels, return_counts=True)
+                                    cluster_sizes = "\n".join([f"- Cluster {i}: {count} samples ({count/len(labels)*100:.1f}%)" 
+                                                              for i, count in zip(unique, counts)])
+                                else:
+                                    cluster_sizes = "No cluster information available"
+                                
+                                prompt = f"""You are an expert in clustering analysis interpreting {selected_model} results.
 
 **Model:** {selected_model}
 **Number of Clusters:** {n_clusters}
@@ -1470,107 +1628,138 @@ Be specific about the metrics and realistic about clustering quality."""
 
 **Dataset:** {X.shape[0]} samples, {X.shape[1]} features
 
-Provide detailed analysis in JSON format:
-1. "cluster_quality": Assess the quality of these clusters based on metrics
-2. "cluster_characteristics": What makes each cluster distinct? (be general)
+Provide detailed analysis specific to {selected_model} in JSON format:
+1. "cluster_quality": Assess quality for THIS SPECIFIC MODEL
+2. "model_specific_insights": What's unique about {selected_model}'s clustering approach?
 3. "balance_assessment": Are clusters well-balanced or is there imbalance?
-4. "actionable_insights": 2-3 ways to use or improve these clusters
+4. "actionable_insights": 2-3 ways to use or improve THESE SPECIFIC clusters
 
-Be specific about the model and metrics."""
-                            
-                            response = st.session_state.ai_engine._call_llm(prompt)
-                            insights = st.session_state.ai_engine._parse_response(response)
-                            
-                            if 'cluster_quality' in insights:
-                                st.info(f"**📊 Cluster Quality:** {insights['cluster_quality']}")
-                            
-                            if 'cluster_characteristics' in insights:
-                                st.success(f"**🔍 Cluster Characteristics:** {insights['cluster_characteristics']}")
-                            
-                            if 'balance_assessment' in insights:
-                                st.info(f"**⚖️ Balance Assessment:** {insights['balance_assessment']}")
-                            
-                            if 'actionable_insights' in insights:
-                                st.warning("**→ Actionable Insights:**")
-                                if isinstance(insights['actionable_insights'], list):
-                                    for insight in insights['actionable_insights']:
-                                        st.markdown(f"- {insight}")
-                                else:
-                                    st.markdown(insights['actionable_insights'])
-                        
-                        except Exception as e:
-                            logger.warning(f"Failed to generate AI clustering explainability: {e}")
-                            st.error(f"AI analysis failed: {e}")
-            
-            # AI-Powered Feature Importance Interpretation (for classification tasks)
-            elif not is_clustering and st.session_state.ai_engine and st.session_state.ai_engine is not False:
-                with st.expander("🤖 AI Feature Analysis", expanded=True):
-                    with st.spinner("🤖 AI is analyzing feature importance..."):
-                        try:
-                            # Get feature importance
-                            if hasattr(model, 'feature_importances_'):
-                                importances = model.feature_importances_
-                            elif hasattr(model, 'coef_'):
-                                coef = model.coef_
-                                importances = np.abs(coef).mean(axis=0) if coef.ndim > 1 else np.abs(coef)
-                            else:
-                                importances = None
-                            
-                            if importances is not None:
-                                # Get top features
-                                top_indices = np.argsort(importances)[-5:][::-1]
-                                top_features = [(feature_names[i], float(importances[i])) for i in top_indices]
-                                
-                                # Create AI prompt
-                                features_str = "\n".join([f"- {name}: {imp:.4f}" for name, imp in top_features])
-                                
-                                prompt = f"""You are an expert data scientist analyzing feature importance for {selected_model}.
-
-**Top 5 Most Important Features:**
-{features_str}
-
-**Dataset Context:**
-- Total Features: {len(feature_names)}
-- Model: {selected_model}
-
-Provide analysis in JSON format:
-1. "key_insights": What do these top features tell us about the problem?
-2. "feature_relationships": Any interesting patterns or relationships?
-3. "actionable_advice": 2-3 specific recommendations based on these features
-
-Be concise and domain-agnostic (don't assume you know the domain)."""
+Be model-specific in your analysis."""
                                 
                                 response = st.session_state.ai_engine._call_llm(prompt)
                                 insights = st.session_state.ai_engine._parse_response(response)
                                 
-                                if 'key_insights' in insights:
-                                    st.info(f"**🔑 Key Insights:** {insights['key_insights']}")
+                                # Cache the AI insights
+                                st.session_state.explainability_cache[ai_cache_key] = insights
                                 
-                                if 'feature_relationships' in insights:
-                                    st.success(f"**🔗 Feature Relationships:** {insights['feature_relationships']}")
+                            except Exception as e:
+                                logger.warning(f"Failed to generate AI clustering explainability: {e}")
+                                st.error(f"AI analysis failed: {str(e)}")
+                                insights = {}
+                    
+                    # Display cached or fresh insights
+                    if 'cluster_quality' in insights:
+                        st.info(f"**📊 Cluster Quality:** {insights['cluster_quality']}")
+                    
+                    if 'model_specific_insights' in insights:
+                        st.success(f"**� {selected_model} Insights:** {insights['model_specific_insights']}")
+                    
+                    if 'balance_assessment' in insights:
+                        st.info(f"**⚖️ Balance Assessment:** {insights['balance_assessment']}")
+                    
+                    if 'actionable_insights' in insights:
+                        st.warning("**→ Actionable Insights:**")
+                        if isinstance(insights['actionable_insights'], list):
+                            for insight in insights['actionable_insights']:
+                                st.markdown(f"- {insight}")
+                        else:
+                            st.markdown(insights['actionable_insights'])
+            
+            # AI-Powered Feature Importance Interpretation (for classification tasks)
+            elif not is_clustering and st.session_state.ai_engine and st.session_state.ai_engine is not False:
+                with st.expander(f"🤖 AI Analysis for {selected_model}", expanded=True):
+                    # Check AI cache for this specific model
+                    ai_cache_key = f"ai_explainability_{selected_model}"
+                    
+                    if ai_cache_key in st.session_state.explainability_cache:
+                        insights = st.session_state.explainability_cache[ai_cache_key]
+                    else:
+                        with st.spinner(f"🤖 AI is analyzing {selected_model} features..."):
+                            try:
+                                # Get model-specific metrics
+                                model_results = st.session_state.results.get(selected_model, {})
+                                test_acc = model_results.get('test_accuracy', 0)
+                                train_acc = model_results.get('train_accuracy', 0)
+                                gap = abs(train_acc - test_acc)
                                 
-                                if 'actionable_advice' in insights:
-                                    st.info("**→ Actionable Advice:**")
-                                    if isinstance(insights['actionable_advice'], list):
-                                        for advice in insights['actionable_advice']:
-                                            st.markdown(f"- {advice}")
-                                    else:
-                                        st.markdown(insights['actionable_advice'])
-                        
-                        except Exception as e:
-                            logger.warning(f"Failed to generate AI feature insights: {e}")
+                                # Get feature importance
+                                if hasattr(model, 'feature_importances_'):
+                                    importances = model.feature_importances_
+                                elif hasattr(model, 'coef_'):
+                                    coef = model.coef_
+                                    importances = np.abs(coef).mean(axis=0) if coef.ndim > 1 else np.abs(coef)
+                                else:
+                                    importances = None
+                                
+                                if importances is not None:
+                                    # Get top features
+                                    top_indices = np.argsort(importances)[-5:][::-1]
+                                    top_features = [(feature_names[i], float(importances[i])) for i in top_indices]
+                                    
+                                    # Create model-specific AI prompt
+                                    features_str = "\n".join([f"- {name}: {imp:.4f}" for name, imp in top_features])
+                                    
+                                    prompt = f"""You are an expert data scientist analyzing {selected_model} specifically.
+
+**Model:** {selected_model}
+**Performance:** Test Acc: {test_acc:.1%}, Train Acc: {train_acc:.1%}, Gap: {gap:.1%}
+
+**Top 5 Most Important Features for {selected_model}:**
+{features_str}
+
+**Dataset Context:**
+- Total Features: {len(feature_names)}
+
+Provide model-specific analysis in JSON format:
+1. "model_characteristics": How does {selected_model} handle these features? What's unique about its approach?
+2. "performance_insights": Why did it achieve {test_acc:.1%} test accuracy? Relate to features.
+3. "feature_advice": 2-3 recommendations to improve THIS MODEL based on these features
+
+Be specific to {selected_model}'s algorithm."""
+                                    
+                                    response = st.session_state.ai_engine._call_llm(prompt)
+                                    insights = st.session_state.ai_engine._parse_response(response)
+                                    
+                                    # Cache the AI insights
+                                    st.session_state.explainability_cache[ai_cache_key] = insights
+                                else:
+                                    insights = {"error": "No feature importance available for this model"}
+                            
+                            except Exception as e:
+                                logger.warning(f"Failed to generate AI feature insights: {e}")
+                                insights = {}
+                    
+                    # Display cached or fresh insights
+                    if 'model_characteristics' in insights:
+                        st.success(f"**� {selected_model} Characteristics:** {insights['model_characteristics']}")
+                    
+                    if 'performance_insights' in insights:
+                        st.info(f"**📊 Performance Analysis:** {insights['performance_insights']}")
+                    
+                    if 'feature_advice' in insights:
+                        st.warning("**→ Model-Specific Advice:**")
+                        if isinstance(insights['feature_advice'], list):
+                            for advice in insights['feature_advice']:
+                                st.markdown(f"- {advice}")
+                        else:
+                            st.markdown(insights['feature_advice'])
+                    
+                    if 'error' in insights:
+                        st.info(insights['error'])
             
             # Check if dataset is too large for SHAP
             n_features = X.shape[1]
+            explanations = {}
+            explainer = None  # Initialize explainer
+            
             if n_features > 1000:
                 st.warning(f"⚠️ Dataset has {n_features:,} features. SHAP explanations may be slow or fail due to memory constraints.")
                 st.info("💡 Tip: SHAP works best with < 1000 features. Consider feature selection for large datasets.")
                 
                 # Ask user if they want to proceed
-                if not st.checkbox(f"Attempt SHAP anyway (may cause memory errors)", value=False):
+                if not st.checkbox(f"Attempt SHAP anyway (may cause memory errors)", value=False, key=f"shap_checkbox_{selected_model}"):
                     st.info("Showing only native model explanations (feature importance, coefficients).")
                     # Skip SHAP, only show native explanations
-                    explanations = {}
                     explainer = ModelExplainer()
                     
                     # Get native feature importance
@@ -1588,27 +1777,43 @@ Be concise and domain-agnostic (don't assume you know the domain)."""
                             name: float(val) for name, val in zip(feature_names, coef)
                         }
                 else:
-                    # User chose to attempt SHAP
-                    with st.spinner(f"Generating SHAP explanations (this may take a while)..."):
+                    # User chose to attempt SHAP - check cache first
+                    if use_cached and 'shap' in st.session_state.explainability_cache[cache_key]:
+                        explanations = st.session_state.explainability_cache[cache_key]['shap']
+                        # Don't show cache message - silent caching is better UX
+                    else:
+                        with st.spinner(f"Generating SHAP explanations for {selected_model} (this may take a while)..."):
+                            try:
+                                explainer = ModelExplainer()
+                                explanations = explainer.explain_model(
+                                    model, X, feature_names, sample_size=20  # Use minimal samples
+                                )
+                                # Cache SHAP results
+                                if cache_key not in st.session_state.explainability_cache:
+                                    st.session_state.explainability_cache[cache_key] = {}
+                                st.session_state.explainability_cache[cache_key]['shap'] = explanations
+                            except Exception as e:
+                                st.error(f"SHAP failed: {e}")
+                                explanations = {}
+            else:
+                # Normal size dataset - check cache first
+                if use_cached and 'shap' in st.session_state.explainability_cache[cache_key]:
+                    explanations = st.session_state.explainability_cache[cache_key]['shap']
+                    # Don't show cache message - silent caching is better UX
+                else:
+                    with st.spinner(f"Generating explanations for {selected_model}..."):
                         try:
                             explainer = ModelExplainer()
                             explanations = explainer.explain_model(
-                                model, X, feature_names, sample_size=20  # Use minimal samples
+                                model, X, feature_names, sample_size=50
                             )
+                            # Cache SHAP results
+                            if cache_key not in st.session_state.explainability_cache:
+                                st.session_state.explainability_cache[cache_key] = {}
+                            st.session_state.explainability_cache[cache_key]['shap'] = explanations
                         except Exception as e:
-                            st.error(f"SHAP failed: {e}")
+                            st.error(f"Error generating explanations: {e}")
                             explanations = {}
-            else:
-                # Normal size dataset
-                with st.spinner(f"Generating explanations for {selected_model}..."):
-                    try:
-                        explainer = ModelExplainer()
-                        explanations = explainer.explain_model(
-                            model, X, feature_names, sample_size=50
-                        )
-                    except Exception as e:
-                        st.error(f"Error generating explanations: {e}")
-                        explanations = {}
             
             # Display explanations (common for both paths)
             if explanations:
@@ -1744,6 +1949,29 @@ Be specific and actionable."""
             # Recommended model
             st.success(f"### Recommended Model: **{recommendation['recommended_model']}**")
             
+            # Add explanation of selection logic
+            evaluator = st.session_state.evaluator
+            leaderboard = evaluator.get_leaderboard('accuracy', penalize_overfitting=True)
+            winner = leaderboard[0]
+            
+            # Show why this model won
+            if winner.get('overfitting_gap', 0) < 0.10:
+                st.info(f"""
+**Why {winner['model']} was selected:**
+- ✅ Best **adjusted score** ({winner.get('adjusted_score', 0):.4f}) considering both accuracy and overfitting
+- ✅ Test accuracy: {winner.get('test_accuracy', 0):.1%}
+- ✅ Low overfitting gap: {winner.get('overfitting_gap', 0):.1%} (train-test difference)
+- ✅ Good generalization expected on new data
+""")
+            else:
+                st.warning(f"""
+**Why {winner['model']} was selected:**
+- Highest **adjusted score** ({winner.get('adjusted_score', 0):.4f}) after overfitting penalty
+- Test accuracy: {winner.get('test_accuracy', 0):.1%}
+- ⚠️ Overfitting detected: {winner.get('overfitting_gap', 0):.1%} gap (train-test)
+- Consider retraining with regularization or try alternative models below
+""")
+            
             col1, col2, col3 = st.columns(3)
             with col1:
                 st.metric("Score", f"{recommendation.get('score', 0):.4f}")
@@ -1843,8 +2071,33 @@ Be specific and realistic about clustering quality and utility."""
                                     st.warning(f"**⚠️ Limitations:** {insights['limitations']}")
                             
                             except Exception as e:
-                                logger.warning(f"Failed to generate AI clustering recommendations: {e}")
-                                st.error(f"AI analysis failed: {e}")
+                                error_str = str(e)
+                                logger.warning(f"Failed to generate AI clustering recommendations: {error_str}")
+                                
+                                # Check if it's a rate limit error
+                                if "rate_limit" in error_str.lower() or "429" in error_str:
+                                    st.warning("⚠️ **AI Analysis Unavailable**: Groq API rate limit reached (100K tokens/day used). Try again later or upgrade at https://console.groq.com/settings/billing")
+                                    
+                                    # Provide rule-based fallback insights
+                                    st.info("**📊 Basic Clustering Assessment (Rule-Based):**")
+                                    
+                                    silhouette = best_results.get('silhouette', 0)
+                                    n_clusters = best_results.get('n_clusters', 0)
+                                    
+                                    if silhouette > 0.5:
+                                        st.success(f"✅ **Strong Clustering**: Silhouette score {silhouette:.3f} indicates well-separated, distinct clusters")
+                                    elif silhouette > 0.25:
+                                        st.info(f"ℹ️ **Moderate Clustering**: Silhouette score {silhouette:.3f} shows reasonable cluster structure")
+                                    else:
+                                        st.warning(f"⚠️ **Weak Clustering**: Silhouette score {silhouette:.3f} suggests overlapping or poorly defined clusters")
+                                    
+                                    st.write(f"**Recommended Actions:**")
+                                    st.write(f"1. Visualize clusters in 2D/3D using PCA/t-SNE")
+                                    st.write(f"2. Analyze cluster centroids and member characteristics")
+                                    st.write(f"3. Try different numbers of clusters (current: {n_clusters})")
+                                    st.write(f"4. Consider feature engineering or dimensionality reduction")
+                                else:
+                                    st.error(f"AI analysis failed: {error_str[:150]}")
                 
                 st.success(f"### Recommended Model: **{best['model']}**")
                 
@@ -1858,6 +2111,327 @@ Be specific and realistic about clustering quality and utility."""
                 st.write(f"1. Highest silhouette score among all methods")
                 st.write(f"2. Identified {best['n_clusters']} distinct clusters")
                 st.write(f"3. Best balance between cohesion and separation")
+                
+                # ENHANCED: Professional Clustering Visualizations
+                st.markdown("---")
+                st.subheader("📊 Clustering Visualizations")
+                
+                try:
+                    import plotly.graph_objects as go
+                    import plotly.express as px
+                    from plotly.subplots import make_subplots
+                    from sklearn.decomposition import PCA
+                    from sklearn.manifold import TSNE
+                    from sklearn.metrics import silhouette_samples
+                    
+                    # Get the best model and its labels
+                    # Try multiple sources: models dict, results['model'], or results['labels']
+                    best_model_name = best['model']
+                    
+                    # Get cluster labels from results (guaranteed to exist)
+                    labels = st.session_state.results[best_model_name].get('labels')
+                    
+                    # Try to get model for potential re-prediction
+                    best_model = None
+                    if best_model_name in st.session_state.get('models', {}):
+                        best_model = st.session_state.models[best_model_name]
+                    elif 'model' in st.session_state.results[best_model_name]:
+                        best_model = st.session_state.results[best_model_name]['model']
+                    
+                    X = st.session_state.X_processed
+                    
+                    # If labels not in results, try to get from model
+                    if labels is None and best_model is not None:
+                        if hasattr(best_model, 'labels_'):
+                            labels = best_model.labels_
+                        elif hasattr(best_model, 'predict'):
+                            labels = best_model.predict(X)
+                    
+                    if labels is None:
+                        st.warning("⚠️ Cluster labels not available for visualization")
+                        labels = None
+                    
+                    if labels is not None:
+                        # Tab layout for different visualizations
+                        viz_tab1, viz_tab2, viz_tab3, viz_tab4 = st.tabs([
+                            "🎯 2D Projection", 
+                            "📊 Cluster Distribution", 
+                            "📏 Silhouette Analysis",
+                            "🔍 Cluster Profiles"
+                        ])
+                        
+                        with viz_tab1:
+                            st.markdown("**PCA 2D Projection of Clusters**")
+                            
+                            # Perform PCA for 2D visualization
+                            pca = PCA(n_components=2, random_state=42)
+                            X_pca = pca.fit_transform(X)
+                            
+                            # Create DataFrame for plotting
+                            plot_df = pd.DataFrame({
+                                'PC1': X_pca[:, 0],
+                                'PC2': X_pca[:, 1],
+                                'Cluster': [f'Cluster {int(l)}' for l in labels]
+                            })
+                            
+                            # Create interactive scatter plot
+                            fig = px.scatter(
+                                plot_df, 
+                                x='PC1', 
+                                y='PC2', 
+                                color='Cluster',
+                                title=f'{best["model"]} - {best["n_clusters"]} Clusters (PCA Projection)',
+                                labels={'PC1': f'PC1 ({pca.explained_variance_ratio_[0]:.1%} variance)', 
+                                       'PC2': f'PC2 ({pca.explained_variance_ratio_[1]:.1%} variance)'},
+                                color_discrete_sequence=px.colors.qualitative.Set2,
+                                height=500
+                            )
+                            
+                            fig.update_traces(marker=dict(size=8, opacity=0.7, line=dict(width=0.5, color='white')))
+                            fig.update_layout(
+                                plot_bgcolor='white',
+                                paper_bgcolor='white',
+                                font=dict(size=12),
+                                legend=dict(orientation="v", yanchor="top", y=1, xanchor="left", x=1.02)
+                            )
+                            
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            st.info(f"""
+                            **How to Read This:**
+                            - Each point is a data sample projected onto 2D space
+                            - Colors represent different clusters
+                            - Good clustering shows distinct, separated groups
+                            - PCA captures {pca.explained_variance_ratio_.sum():.1%} of total variance
+                            """)
+                        
+                        with viz_tab2:
+                            st.markdown("**Cluster Size Distribution**")
+                            
+                            # Cluster sizes
+                            unique_labels, counts = np.unique(labels, return_counts=True)
+                            cluster_df = pd.DataFrame({
+                                'Cluster': [f'Cluster {int(l)}' for l in unique_labels],
+                                'Size': counts,
+                                'Percentage': counts / len(labels) * 100
+                            })
+                            
+                            # Create bar chart
+                            fig = go.Figure()
+                            
+                            fig.add_trace(go.Bar(
+                                x=cluster_df['Cluster'],
+                                y=cluster_df['Size'],
+                                text=[f"{s} ({p:.1f}%)" for s, p in zip(cluster_df['Size'], cluster_df['Percentage'])],
+                                textposition='outside',
+                                marker=dict(
+                                    color=cluster_df['Size'],
+                                    colorscale='Viridis',
+                                    showscale=False
+                                )
+                            ))
+                            
+                            fig.update_layout(
+                                title=f"Cluster Size Distribution ({len(labels):,} total samples)",
+                                xaxis_title="Cluster",
+                                yaxis_title="Number of Samples",
+                                plot_bgcolor='white',
+                                paper_bgcolor='white',
+                                height=400,
+                                showlegend=False
+                            )
+                            
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            # Show table
+                            st.dataframe(cluster_df, use_container_width=True)
+                            
+                            # Balance assessment
+                            max_size = cluster_df['Size'].max()
+                            min_size = cluster_df['Size'].min()
+                            imbalance_ratio = max_size / min_size if min_size > 0 else float('inf')
+                            
+                            if imbalance_ratio < 2:
+                                st.success(f"✅ **Well-Balanced Clusters**: Largest/smallest ratio is {imbalance_ratio:.1f}x")
+                            elif imbalance_ratio < 5:
+                                st.info(f"ℹ️ **Moderate Imbalance**: Largest/smallest ratio is {imbalance_ratio:.1f}x")
+                            else:
+                                st.warning(f"⚠️ **Imbalanced Clusters**: Largest/smallest ratio is {imbalance_ratio:.1f}x - consider different number of clusters")
+                        
+                        with viz_tab3:
+                            st.markdown("**Silhouette Analysis per Cluster**")
+                            
+                            # Calculate silhouette scores per sample
+                            silhouette_vals = silhouette_samples(X, labels)
+                            
+                            # Create silhouette plot data
+                            y_lower = 10
+                            silhouette_data = []
+                            
+                            for i in unique_labels:
+                                cluster_silhouette_vals = silhouette_vals[labels == i]
+                                cluster_silhouette_vals.sort()
+                                
+                                size_cluster_i = cluster_silhouette_vals.shape[0]
+                                y_upper = y_lower + size_cluster_i
+                                
+                                silhouette_data.append({
+                                    'cluster': int(i),
+                                    'y_lower': y_lower,
+                                    'y_upper': y_upper,
+                                    'values': cluster_silhouette_vals,
+                                    'avg': cluster_silhouette_vals.mean()
+                                })
+                                
+                                y_lower = y_upper + 10
+                            
+                            # Create silhouette plot
+                            fig = go.Figure()
+                            
+                            colors = px.colors.qualitative.Set2
+                            for idx, cluster_data in enumerate(silhouette_data):
+                                y_vals = np.arange(cluster_data['y_lower'], cluster_data['y_upper'])
+                                
+                                fig.add_trace(go.Scatter(
+                                    x=cluster_data['values'],
+                                    y=y_vals,
+                                    mode='lines',
+                                    fill='tozerox',
+                                    name=f"Cluster {cluster_data['cluster']}",
+                                    line=dict(color=colors[idx % len(colors)], width=0.5),
+                                    fillcolor=colors[idx % len(colors)],
+                                    hovertemplate=f"Cluster {cluster_data['cluster']}<br>Silhouette: %{{x:.3f}}<extra></extra>"
+                                ))
+                            
+                            # Add average silhouette score line
+                            avg_silhouette = silhouette_vals.mean()
+                            fig.add_vline(
+                                x=avg_silhouette,
+                                line_dash="dash",
+                                line_color="red",
+                                annotation_text=f"Avg: {avg_silhouette:.3f}",
+                                annotation_position="top"
+                            )
+                            
+                            fig.update_layout(
+                                title="Silhouette Plot for Each Cluster",
+                                xaxis_title="Silhouette Coefficient",
+                                yaxis_title="Cluster",
+                                plot_bgcolor='white',
+                                paper_bgcolor='white',
+                                height=500,
+                                showlegend=True,
+                                yaxis=dict(showticklabels=False)
+                            )
+                            
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            # Silhouette interpretation
+                            st.info(f"""
+                            **How to Read This:**
+                            - Each colored section represents one cluster
+                            - Width shows how many samples are in the cluster
+                            - X-axis shows silhouette coefficient (how well-separated the cluster is)
+                            - Red dashed line is the average silhouette score ({avg_silhouette:.3f})
+                            - Good clusters: Most values > average and close to 1.0
+                            - Poor clusters: Many values below average or negative
+                            """)
+                            
+                            # Per-cluster metrics
+                            cluster_metrics = pd.DataFrame([
+                                {
+                                    'Cluster': f"Cluster {d['cluster']}",
+                                    'Size': len(d['values']),
+                                    'Avg Silhouette': f"{d['avg']:.3f}",
+                                    'Quality': '✅ Excellent' if d['avg'] > 0.5 else ('🟢 Good' if d['avg'] > 0.25 else '⚠️ Weak')
+                                }
+                                for d in silhouette_data
+                            ])
+                            
+                            st.dataframe(cluster_metrics, use_container_width=True)
+                        
+                        with viz_tab4:
+                            st.markdown("**Cluster Characteristics Profile**")
+                            
+                            # Get original data with cluster labels
+                            df_with_clusters = st.session_state.data.copy()
+                            df_with_clusters['Cluster'] = [f'Cluster {int(l)}' for l in labels]
+                            
+                            # Calculate cluster statistics for numeric columns
+                            numeric_cols = df_with_clusters.select_dtypes(include=[np.number]).columns.tolist()
+                            if 'Cluster' in numeric_cols:
+                                numeric_cols.remove('Cluster')
+                            
+                            if numeric_cols:
+                                # Show top 5 most important features
+                                feature_cols = numeric_cols[:5] if len(numeric_cols) > 5 else numeric_cols
+                                
+                                st.write(f"**Cluster Centroids** (showing top {len(feature_cols)} features):")
+                                
+                                # Calculate means per cluster
+                                cluster_profiles = []
+                                for cluster_name in sorted(df_with_clusters['Cluster'].unique()):
+                                    cluster_data = df_with_clusters[df_with_clusters['Cluster'] == cluster_name]
+                                    profile = {'Cluster': cluster_name, 'Size': len(cluster_data)}
+                                    
+                                    for col in feature_cols:
+                                        if col in cluster_data.columns:
+                                            profile[col] = cluster_data[col].mean()
+                                    
+                                    cluster_profiles.append(profile)
+                                
+                                profile_df = pd.DataFrame(cluster_profiles)
+                                
+                                # Display as styled dataframe
+                                st.dataframe(
+                                    profile_df.style.background_gradient(cmap='RdYlGn', subset=feature_cols),
+                                    use_container_width=True
+                                )
+                                
+                                # Radar chart for cluster comparison (if 3-6 features)
+                                if 3 <= len(feature_cols) <= 6 and len(cluster_profiles) <= 5:
+                                    st.write("**Cluster Comparison (Normalized Features):**")
+                                    
+                                    # Normalize features for radar chart
+                                    from sklearn.preprocessing import MinMaxScaler
+                                    scaler = MinMaxScaler()
+                                    normalized_values = scaler.fit_transform(profile_df[feature_cols])
+                                    
+                                    fig = go.Figure()
+                                    
+                                    for idx, cluster in enumerate(cluster_profiles):
+                                        fig.add_trace(go.Scatterpolar(
+                                            r=normalized_values[idx],
+                                            theta=feature_cols,
+                                            fill='toself',
+                                            name=cluster['Cluster']
+                                        ))
+                                    
+                                    fig.update_layout(
+                                        polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
+                                        showlegend=True,
+                                        title="Cluster Feature Profiles (Normalized)",
+                                        height=500
+                                    )
+                                    
+                                    st.plotly_chart(fig, use_container_width=True)
+                                
+                                st.success("""
+                                **💡 Use These Insights To:**
+                                - Understand what makes each cluster unique
+                                - Name/label clusters based on their characteristics
+                                - Identify which features drive cluster separation
+                                - Make business decisions based on cluster profiles
+                                """)
+                            else:
+                                st.info("No numeric features available for cluster profiling")
+                    
+                    else:
+                        st.warning("Unable to generate visualizations - cluster labels not available")
+                
+                except Exception as e:
+                    logger.error(f"Failed to create clustering visualizations: {e}")
+                    st.warning(f"Visualization error: {str(e)[:200]}")
     
     def render_report(self):
         """Render report tab."""
@@ -2005,8 +2579,94 @@ Write professionally but accessibly. Be specific with numbers and metrics. Make 
                             st.write(report_insights['conclusion'])
                     
                     except Exception as e:
-                        logger.warning(f"Failed to generate AI report: {e}")
-                        st.error(f"AI report generation failed: {e}")
+                        error_msg = str(e)
+                        logger.warning(f"Failed to generate AI report: {error_msg}")
+                        
+                        # Check if it's a rate limit error
+                        if "rate_limit" in error_msg.lower() or "429" in error_msg:
+                            st.warning("⚠️ **AI Report Generation Unavailable**: API rate limit reached. Showing structured report instead.")
+                            
+                            # FALLBACK: Generate structured report from data
+                            st.markdown("### 📋 Executive Summary")
+                            
+                            is_clustering = st.session_state.task_type == "Clustering"
+                            evaluator = st.session_state.evaluator
+                            
+                            if is_clustering:
+                                leaderboard = evaluator.get_leaderboard('silhouette')
+                                best_model = leaderboard[0]
+                                best_name = best_model['model']
+                                best_results = st.session_state.results[best_name]
+                                
+                                st.write(f"""
+This AutoML analysis tested **{len(st.session_state.results)} clustering algorithms** on a dataset of 
+**{st.session_state.data.shape[0]:,} samples** with **{st.session_state.data.shape[1]} features**.
+
+**Key Result**: {best_name} achieved the best performance with a silhouette score of **{best_results.get('silhouette', 0):.4f}**, 
+identifying **{best_results.get('n_clusters', 0)} optimal clusters**.
+""")
+                                
+                                st.markdown("### 🔑 Key Findings")
+                                st.markdown(f"""
+- **Best Algorithm**: {best_name} performed best with silhouette score {best_results.get('silhouette', 0):.4f}
+- **Cluster Count**: {best_results.get('n_clusters', 0)} clusters identified
+- **Model Comparison**: Tested {len(leaderboard)} algorithms including {', '.join([m['model'] for m in leaderboard[:3]])}
+- **Data Quality**: Successfully processed {st.session_state.data.shape[0]:,} samples after preprocessing
+""")
+                            else:
+                                leaderboard = evaluator.get_leaderboard('accuracy')
+                                best_model = leaderboard[0]
+                                best_name = best_model.get('model', 'Unknown')
+                                test_acc = best_model.get('test_accuracy', best_model.get('score', 0))
+                                train_acc = best_model.get('train_accuracy', test_acc)
+                                gap = best_model.get('overfitting_gap', abs(train_acc - test_acc))
+                                
+                                st.write(f"""
+This AutoML analysis tested **{len(st.session_state.results)} classification algorithms** on a dataset of 
+**{st.session_state.data.shape[0]:,} samples** with **{st.session_state.data.shape[1]} features**.
+
+**Key Result**: {best_name} achieved the best performance with **{test_acc:.1%} test accuracy** 
+and an overfitting gap of **{gap:.1%}** ({('✅ Good' if gap < 0.10 else '⚠️ Overfit')}).
+""")
+                                
+                                st.markdown("### 🔑 Key Findings")
+                                
+                                # Find model with lowest overfitting
+                                sorted_by_gap = sorted(leaderboard, key=lambda x: x.get('overfitting_gap', 1))
+                                best_gap_model = sorted_by_gap[0]
+                                
+                                st.markdown(f"""
+- **Winner**: {best_name} achieved highest adjusted score (test accuracy with overfitting penalty)
+- **Test Accuracy**: {test_acc:.1%} on held-out test data
+- **Generalization**: {('✅ Excellent' if gap < 0.05 else '✅ Good' if gap < 0.10 else '⚠️ Shows overfitting')} (gap: {gap:.1%})
+- **Most Reliable Model**: {best_gap_model['model']} has lowest overfitting ({best_gap_model.get('overfitting_gap', 0):.1%} gap)
+- **Model Diversity**: Tested {len(leaderboard)} algorithms including {', '.join([m['model'] for m in leaderboard[:3]])}
+""")
+                                
+                                st.markdown("### 💡 Recommendations")
+                                recommendations = []
+                                
+                                if gap > 0.15:
+                                    recommendations.append(f"**Reduce Overfitting**: {best_name} shows high train-test gap ({gap:.1%}). Consider using {best_gap_model['model']} (gap: {best_gap_model.get('overfitting_gap', 0):.1%}) for better generalization.")
+                                elif gap > 0.10:
+                                    recommendations.append(f"**Monitor Overfitting**: {best_name} shows moderate overfitting. Validate on additional data before deployment.")
+                                else:
+                                    recommendations.append(f"**Deploy Confidently**: {best_name} shows excellent generalization (gap: {gap:.1%}). Ready for production.")
+                                
+                                if test_acc < 0.50:
+                                    recommendations.append(f"**Improve Performance**: Current accuracy ({test_acc:.1%}) is low. Consider feature engineering or collecting more data.")
+                                
+                                recommendations.append("**Validate Results**: Test final model on completely unseen data before production deployment.")
+                                recommendations.append("**Monitor Performance**: Set up tracking to detect model drift over time.")
+                                
+                                for rec in recommendations:
+                                    st.markdown(f"- {rec}")
+                            
+                            st.markdown("### ⚠️ Note")
+                            st.info("This is a structured report generated from your results. For AI-powered insights and detailed analysis, try again tomorrow when your API quota resets, or upgrade your plan.")
+                        
+                        else:
+                            st.error(f"AI report generation failed: {error_msg}")
         
         st.write("---")
         st.write("Download a comprehensive PDF report with all results and visualizations.")

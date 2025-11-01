@@ -130,50 +130,75 @@ class MLPClassifier(BaseEstimator, ClassifierMixin):
         return self.classes_[np.argmax(probas, axis=1)]
 
 
-def get_supervised_models(random_state: int = 42) -> Dict[str, Any]:
+def get_supervised_models(random_state: int = 42, n_samples: int = None) -> Dict[str, Any]:
     """
     Get a dictionary of supervised learning models.
+    Auto-optimizes model settings based on dataset size.
     
     Args:
         random_state: Random seed for reproducibility
+        n_samples: Number of samples in dataset (for optimization)
         
     Returns:
         Dictionary mapping model names to model instances
     """
+    # Adaptive settings based on dataset size
+    if n_samples is not None and n_samples > 10000:
+        # Large dataset optimizations
+        svm_max_iter = 500  # Reduce iterations for speed
+        rf_estimators = 50   # Fewer trees
+        xgb_estimators = 50
+        rf_max_depth = 8
+    elif n_samples is not None and n_samples > 5000:
+        svm_max_iter = 800
+        rf_estimators = 75
+        xgb_estimators = 75
+        rf_max_depth = 10
+    else:
+        # Standard settings for smaller datasets
+        svm_max_iter = 1000
+        rf_estimators = 100
+        xgb_estimators = 100
+        rf_max_depth = 10
+    
     models = {
         'LogisticRegression': LogisticRegression(
             max_iter=1000,
             random_state=random_state,
-            n_jobs=1  # Changed from -1 to avoid Windows multiprocessing issues
+            n_jobs=1
         ),
         'LinearSVM': SVC(
             kernel='linear',
             probability=True,
-            random_state=random_state
+            random_state=random_state,
+            max_iter=svm_max_iter,  # Adaptive
+            cache_size=1000  # Larger cache for speed
         ),
         'RBF-SVM': SVC(
             kernel='rbf',
             probability=True,
             gamma='scale',
-            random_state=random_state
+            random_state=random_state,
+            max_iter=svm_max_iter,  # Adaptive
+            cache_size=1000
         ),
         'KNN': KNeighborsClassifier(
             n_neighbors=5,
-            n_jobs=1  # Changed from -1 to avoid Windows multiprocessing issues
+            n_jobs=1
         ),
         'RandomForest': RandomForestClassifier(
-            n_estimators=100,
-            max_depth=10,
+            n_estimators=rf_estimators,  # Adaptive
+            max_depth=rf_max_depth,  # Adaptive
             random_state=random_state,
-            n_jobs=1  # Changed from -1 to avoid Windows multiprocessing issues
+            n_jobs=1
         ),
         'XGBoost': XGBClassifier(
-            n_estimators=100,
+            n_estimators=xgb_estimators,  # Adaptive
             max_depth=6,
             learning_rate=0.1,
             random_state=random_state,
-            n_jobs=1,  # Changed from -1 to avoid Windows multiprocessing issues
-            eval_metric='logloss'  # Removed deprecated use_label_encoder parameter
+            n_jobs=1,
+            eval_metric='logloss'
         ),
         'MLP': MLPClassifier(
             hidden_layers=(128, 64),

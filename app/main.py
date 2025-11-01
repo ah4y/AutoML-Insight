@@ -45,6 +45,15 @@ def main():
         </p>
     """, unsafe_allow_html=True)
     
+    # Show connection status if in remote mode
+    if 'execution_mode' in st.session_state and st.session_state.execution_mode in ['remote', 'colab']:
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            if st.session_state.get('jupyter_connected', False):
+                st.success("✅ Connected to Jupyter server", icon="🔗")
+            else:
+                st.info("ℹ️ Select 'Remote Jupyter Server' in sidebar to connect", icon="💡")
+    
     # Initialize dashboard
     dashboard = AutoMLDashboard()
     dashboard.render()

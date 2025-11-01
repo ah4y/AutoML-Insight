@@ -7,16 +7,18 @@
 
 ## ✨ Features
 
-- 🧠 **AI-Powered Insights**: Dynamic analysis using Groq/OpenAI/Gemini LLMs at every workflow stage
+- 🧠 **AI-Powered Insights**: Dynamic analysis using Groq/OpenAI/Gemini LLMs at every workflow stage with intelligent rate limit handling and caching
 - 📊 **Automatic Dataset Profiling**: Comprehensive statistical analysis and meta-feature extraction
-- 🤖 **13+ ML Models**: 7 supervised (LogReg, SVM, RF, XGBoost, MLP) + 6 clustering algorithms
+- 🤖 **13+ ML Models**: 7 supervised (LogReg, SVM, RF, XGBoost, MLP) + 6 clustering algorithms with adaptive optimization
 - 📈 **Rigorous Evaluation**: Nested cross-validation with confidence intervals and statistical tests
-- 🔍 **Model Explainability**: SHAP-based explanations, feature importance, and interpretability
-- 🎯 **Smart Recommendations**: Meta-learning engine with AI-enhanced deployment guidance
+- 🔍 **Model Explainability**: SHAP-based explanations, feature importance, and interpretability with per-model caching
+- 🎯 **Smart Recommendations**: Meta-learning engine with AI-enhanced deployment guidance and overfitting penalties
 - 🔧 **Hyperparameter Tuning**: Optuna-based optimization with nested CV
-- 📊 **Interactive Dashboard**: Streamlit UI with Plotly visualizations and real-time AI analysis
-- 📄 **AI-Generated Reports**: Comprehensive reports with executive summaries and actionable insights
-- ☁️ **Remote Execution**: Jupyter/Colab integration for cloud-based training
+- 📊 **Interactive Dashboard**: Streamlit UI with professional Plotly visualizations and real-time AI analysis
+- 📄 **AI-Generated Reports**: Comprehensive reports with executive summaries and rule-based fallbacks
+- 🌐 **Remote Execution**: Jupyter server integration for scalable cloud-based training
+- 🛡️ **Intelligent Overfitting Detection**: Model-specific warnings with severity levels and actionable recommendations
+- 📈 **Professional Clustering Visualizations**: 4 interactive tabs (PCA projection, distribution, silhouette, profiles)
 - 🧪 **Production-Ready**: Modular OOP design, logging, testing, and reproducibility
 
 ## 🏗️ Architecture
@@ -147,18 +149,26 @@ python experiments/run_experiment.py --config experiments/configs/default.yaml
 
 ### Classification
 - Accuracy with 95% CI
+- Train vs Test Performance (overfitting detection)
+- Adjusted Score (with overfitting penalty)
 - Macro F1-Score
 - ROC-AUC (OVR)
 - Log Loss
 - Brier Score
 - McNemar's Test
 - Wilcoxon Test
+- Interactive 4-panel performance dashboard
 
 ### Clustering
-- Silhouette Score
+- Silhouette Score (overall and per-cluster)
 - Davies-Bouldin Index
 - Calinski-Harabasz Index
 - Cluster Stability
+- Professional visualizations:
+  - 2D PCA projection with variance explained
+  - Cluster size distribution with balance assessment
+  - Per-cluster silhouette analysis with quality metrics
+  - Cluster profiles with centroids and radar charts
 
 ## 🔍 Explainability
 
@@ -208,6 +218,11 @@ Edit `app/config.yaml` to customize:
 - Improvement suggestions based on actual results
 - Deployment readiness evaluation
 - Risk assessment and monitoring guidance
+- **Intelligent overfitting detection** with model-specific warnings:
+  - HIGH severity: Critical issues requiring immediate action
+  - MEDIUM/LOW severity: Informational guidance for optimization
+  - Smart thresholds based on model characteristics
+  - Realistic perfect score detection (avoids false alarms)
 
 **Clustering Tasks:**
 - Cluster quality evaluation with honest assessments
@@ -215,9 +230,20 @@ Edit `app/config.yaml` to customize:
 - Balance analysis and distribution insights
 - Validation steps before deployment
 - Use case recommendations
+- **Professional visualizations** with 4 interactive tabs:
+  - PCA 2D projection showing cluster separation
+  - Size distribution with imbalance detection
+  - Silhouette analysis revealing cluster quality
+  - Cluster profiles with centroids and radar charts
+
+**Robustness & Reliability:**
+- **Intelligent rate limit handling**: Automatic fallback to rule-based insights
+- **Response caching**: MD5-based caching reduces API calls
+- **User-friendly error messages**: Clear guidance when AI unavailable
+- **Graceful degradation**: App remains fully functional without AI
 
 **For All Tasks:**
-- AI-generated comprehensive reports
+- AI-generated comprehensive reports with fallback mode
 - Executive summaries for non-technical stakeholders
 - Actionable next steps
 - Honest limitations and caveats

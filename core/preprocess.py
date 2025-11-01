@@ -97,7 +97,27 @@ class DataPreprocessor:
         self.numeric_features = X.select_dtypes(include=[np.number]).columns.tolist()
         self.categorical_features = X.select_dtypes(exclude=[np.number]).columns.tolist()
         
-        # PRE-SELECTION: If too many features, select before transformation to avoid memory issues
+        # MEMORY SAFETY: Limit high-cardinality categorical features to prevent OOM errors
+        if self.categorical_features:
+            max_categories_per_feature = 50  # Limit one-hot encoding explosion
+            high_cardinality_features = []
+            
+            for col in self.categorical_features:
+                n_unique = X[col].nunique()
+                if n_unique > max_categories_per_feature:
+                    high_cardinality_features.append((col, n_unique))
+            
+            if high_cardinality_features:
+                self.logger.warning(f"Found {len(high_cardinality_features)} high-cardinality categorical features that would create {sum(n for _, n in high_cardinality_features):,} one-hot encoded columns")
+                self.logger.warning(f"Removing these features to prevent memory issues: {[col for col, _ in high_cardinality_features[:5]]}")
+                
+                # Remove high cardinality categorical features
+                X = X.drop(columns=[col for col, _ in high_cardinality_features])
+                self.categorical_features = [col for col in self.categorical_features if col not in [c for c, _ in high_cardinality_features]]
+                
+                self.logger.info(f"Remaining categorical features: {len(self.categorical_features)}")
+        
+        # PRE-SELECTION: If too many numeric features, select before transformation to avoid memory issues
         if len(self.numeric_features) > self.max_features and y is not None:
             self.logger.warning(f"Dataset has {len(self.numeric_features):,} numeric features. Pre-selecting top {self.max_features:,} before transformation to prevent memory issues...")
             
@@ -122,6 +142,43 @@ class DataPreprocessor:
             # Keep only selected numeric features
             self.numeric_features = top_features
             X = X[self.numeric_features + self.categorical_features]
+        
+        # FINAL SAFETY CHECK: Estimate memory requirements
+        n_samples = X.shape[0]
+        estimated_features = len(self.numeric_features)
+        
+        # Estimate categorical expansion (assume average 10 categories per feature)
+        if self.categorical_features:
+            avg_categories = min(10, max([X[col].nunique() for col in self.categorical_features]))
+            estimated_features += len(self.categorical_features) * avg_categories
+        
+        # Estimate memory (float64 = 8 bytes)
+        estimated_memory_gb = (n_samples * estimated_features * 8) / (1024**3)
+        
+        if estimated_memory_gb > 4.0:
+            self.logger.error(f"⚠️ Estimated memory requirement: {estimated_memory_gb:.2f} GB")
+            self.logger.error(f"   Samples: {n_samples:,}, Features: {estimated_features:,}")
+            
+            # Emergency feature reduction
+            if y is not None and len(self.numeric_features) > 500:
+                reduced_max = min(500, self.max_features)
+                self.logger.warning(f"EMERGENCY: Reducing to {reduced_max} features to fit in memory")
+                
+                X_numeric = X[self.numeric_features].fillna(X[self.numeric_features].median())
+                from sklearn.preprocessing import LabelEncoder
+                if not pd.api.types.is_numeric_dtype(y):
+                    y_numeric = LabelEncoder().fit_transform(y)
+                else:
+                    y_numeric = y
+                
+                correlations = X_numeric.corrwith(pd.Series(y_numeric)).abs()
+                correlations = correlations.fillna(0)
+                top_features = correlations.nlargest(reduced_max).index.tolist()
+                
+                self.numeric_features = top_features
+                X = X[self.numeric_features + self.categorical_features]
+                
+                self.logger.info(f"Emergency reduction complete: {len(self.numeric_features)} numeric + {len(self.categorical_features)} categorical features")
         
         # Numeric pipeline: impute + scale
         numeric_pipeline = Pipeline([

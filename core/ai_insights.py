@@ -7,6 +7,8 @@ Supports multiple providers: Groq (fast), OpenAI (powerful), Gemini (alternative
 
 import os
 import json
+import time
+import hashlib
 from typing import Dict, List, Optional, Any, Tuple
 from dataclasses import dataclass
 import pandas as pd
@@ -18,6 +20,9 @@ import logging
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+# Global cache for AI responses
+_ai_response_cache: Dict[str, Dict[str, Any]] = {}
 
 
 @dataclass
@@ -206,6 +211,7 @@ class AIInsightEngine:
     ) -> Dict[str, str]:
         """
         Generate AI-powered insights based on dataset statistics.
+        Falls back to rule-based insights if AI fails.
         
         Args:
             stats: Dataset statistics object
@@ -219,11 +225,24 @@ class AIInsightEngine:
         try:
             response = self._call_llm(prompt)
             insights = self._parse_response(response)
+            insights['_source'] = 'ai'  # Mark as AI-generated
             return insights
             
         except Exception as e:
-            self.logger.error(f"Failed to generate AI insights: {e}")
-            return self._fallback_insights(stats)
+            error_msg = str(e)
+            self.logger.warning(f"AI insights failed: {error_msg}")
+            
+            # Use rule-based fallback
+            insights = self._fallback_insights(stats)
+            insights['_source'] = 'rules'  # Mark as rule-based
+            
+            # Add informative message for user
+            if "rate_limit" in error_msg.lower() or "429" in error_msg:
+                insights['_notice'] = "⚠️ AI rate limit reached. Showing rule-based recommendations. Upgrade your API plan or try again later for AI insights."
+            else:
+                insights['_notice'] = "⚠️ AI analysis unavailable. Showing rule-based recommendations."
+            
+            return insights
     
     def _build_prompt(self, stats: DatasetStatistics, context: str) -> str:
         """Build prompt for LLM based on statistics and context."""
@@ -283,8 +302,92 @@ Be specific to this dataset's characteristics."""
         
         return prompt
     
-    def _call_llm(self, prompt: str) -> str:
-        """Call the LLM API and return response text."""
+    def _call_llm(self, prompt: str, max_retries: int = 3) -> str:
+        """
+        Call the LLM API with retry logic for rate limits.
+        
+        Args:
+            prompt: The prompt to send to LLM
+            max_retries: Maximum retry attempts
+            
+        Returns:
+            Response text from LLM
+            
+        Raises:
+            Exception: If all retries fail
+        """
+        # Check cache first
+        cache_key = hashlib.md5(f"{self.provider}:{self.model}:{prompt}".encode()).hexdigest()
+        if cache_key in _ai_response_cache:
+            self.logger.info("Using cached AI response")
+            return _ai_response_cache[cache_key]
+        
+        last_exception = None
+        
+        for attempt in range(max_retries):
+            try:
+                response_text = self._make_llm_call(prompt)
+                
+                # Cache successful response
+                _ai_response_cache[cache_key] = response_text
+                
+                # Limit cache size (keep last 100 entries)
+                if len(_ai_response_cache) > 100:
+                    oldest_key = next(iter(_ai_response_cache))
+                    del _ai_response_cache[oldest_key]
+                
+                return response_text
+                
+            except Exception as e:
+                error_str = str(e)
+                last_exception = e
+                
+                # Check if it's a rate limit error
+                if "rate_limit" in error_str.lower() or "429" in error_str:
+                    # Extract wait time from error message
+                    wait_time = self._extract_wait_time(error_str)
+                    
+                    if wait_time and wait_time > 0:
+                        self.logger.warning(f"Rate limit hit. Waiting {wait_time:.0f}s before retry {attempt + 1}/{max_retries}")
+                        
+                        # Only wait if it's reasonable (< 5 minutes) and not last attempt
+                        if wait_time < 300 and attempt < max_retries - 1:
+                            time.sleep(wait_time)
+                            continue
+                    
+                    # Rate limit too long or last attempt - return fallback
+                    self.logger.error(f"Rate limit exceeded: {error_str}")
+                    raise Exception(f"Rate limit exceeded. Please try again later or upgrade your API plan.")
+                
+                # For other errors, retry with exponential backoff
+                if attempt < max_retries - 1:
+                    backoff = (2 ** attempt) * 2  # 2s, 4s, 8s
+                    self.logger.warning(f"API call failed: {error_str}. Retrying in {backoff}s...")
+                    time.sleep(backoff)
+                else:
+                    self.logger.error(f"API call failed after {max_retries} attempts: {error_str}")
+                    raise
+        
+        # Should never reach here, but just in case
+        raise last_exception or Exception("API call failed")
+    
+    def _extract_wait_time(self, error_message: str) -> Optional[float]:
+        """Extract wait time from rate limit error message."""
+        import re
+        
+        # Look for patterns like "3m29.952s" or "5m33s" or "30s"
+        pattern = r'(?:(\d+)m)?(\d+(?:\.\d+)?)s'
+        match = re.search(pattern, error_message)
+        
+        if match:
+            minutes = int(match.group(1)) if match.group(1) else 0
+            seconds = float(match.group(2))
+            return minutes * 60 + seconds
+        
+        return None
+    
+    def _make_llm_call(self, prompt: str) -> str:
+        """Make the actual LLM API call (no retry logic)."""
         
         if self.provider == 'groq':
             response = self.client.chat.completions.create(
@@ -342,20 +445,98 @@ Be specific to this dataset's characteristics."""
             return {"raw_response": response}
     
     def _fallback_insights(self, stats: DatasetStatistics) -> Dict[str, str]:
-        """Generate basic insights without AI (fallback)."""
-        insights = {
-            "summary": f"Dataset with {stats.n_samples:,} samples and {stats.n_features} features for {stats.target_type}.",
-            "data_quality": f"Data quality score: {stats.data_quality_score:.1f}/100",
-        }
+        """Generate rule-based insights without AI (fallback for rate limits/errors)."""
+        insights = {}
         
+        # Summary
+        summary_parts = []
+        summary_parts.append(f"Dataset with {stats.n_samples:,} samples and {stats.n_features} features")
+        
+        if stats.n_classes:
+            summary_parts.append(f"{stats.n_classes}-class {stats.target_type} problem")
+        
+        insights["summary"] = ". ".join(summary_parts) + "."
+        
+        # Strengths
+        strengths = []
+        if stats.n_samples >= 1000:
+            strengths.append(f"Good sample size ({stats.n_samples:,} samples) for reliable training")
+        if stats.data_quality_score >= 80:
+            strengths.append(f"High data quality (score: {stats.data_quality_score:.0f}/100)")
+        if stats.missing_rate < 0.05:
+            strengths.append(f"Low missing data ({stats.missing_rate:.1%})")
+        
+        if strengths:
+            insights["strengths"] = strengths
+        
+        # Challenges
+        challenges = []
         if stats.missing_rate > 0.1:
-            insights["warning"] = f"High missing data rate: {stats.missing_rate:.1%}"
+            challenges.append(f"High missing data rate ({stats.missing_rate:.1%}) - consider imputation strategies")
         
         if stats.class_balance:
             max_ratio = max(stats.class_balance.values())
             min_ratio = min(stats.class_balance.values())
-            if max_ratio / min_ratio > 5:
-                insights["imbalance"] = "Significant class imbalance detected"
+            imbalance_ratio = max_ratio / min_ratio if min_ratio > 0 else float('inf')
+            
+            if imbalance_ratio > 10:
+                challenges.append(f"Severe class imbalance (ratio {imbalance_ratio:.1f}:1) - use SMOTE or class weights")
+            elif imbalance_ratio > 5:
+                challenges.append(f"Moderate class imbalance (ratio {imbalance_ratio:.1f}:1) - monitor minority class performance")
+        
+        if stats.n_features > 100:
+            challenges.append(f"High dimensionality ({stats.n_features} features) - consider feature selection")
+        
+        if stats.n_samples < 500:
+            challenges.append(f"Small dataset ({stats.n_samples} samples) - risk of overfitting, use cross-validation")
+        
+        if challenges:
+            insights["challenges"] = challenges
+        
+        # Recommendations
+        recommendations = []
+        
+        # Based on dataset size
+        if stats.n_samples < 500:
+            recommendations.append("Use k-fold cross-validation (5-10 folds) for reliable evaluation")
+            recommendations.append("Try simpler models (LogisticRegression, RandomForest) to avoid overfitting")
+        elif stats.n_samples > 10000:
+            recommendations.append("Large dataset allows complex models (XGBoost, Neural Networks)")
+            recommendations.append("Consider using early stopping to save training time")
+        
+        # Based on feature types
+        if stats.n_categorical > stats.n_numeric:
+            recommendations.append("Many categorical features - ensure proper encoding (one-hot/label encoding)")
+        
+        # Based on class balance
+        if stats.class_balance and imbalance_ratio > 5:
+            recommendations.append("Use stratified splits and balanced accuracy metrics")
+            recommendations.append("Consider SMOTE oversampling or class_weight='balanced'")
+        
+        # Based on missing data
+        if stats.missing_rate > 0.1:
+            recommendations.append("Apply robust imputation (median for numeric, mode for categorical)")
+        
+        # Feature correlation
+        if stats.feature_correlations and len(stats.feature_correlations) > 0:
+            high_corr = [c for c in stats.feature_correlations if c[2] > 0.9]
+            if high_corr:
+                recommendations.append(f"Remove highly correlated features ({len(high_corr)} pairs with r>0.9)")
+        
+        # Ensure at least 3 recommendations
+        if len(recommendations) < 3:
+            recommendations.append("Start with tree-based models (RandomForest, XGBoost) for good baseline")
+            recommendations.append("Monitor train vs test performance to detect overfitting")
+        
+        insights["recommendations"] = recommendations
+        
+        # Data quality assessment
+        if stats.data_quality_score < 60:
+            insights["data_quality"] = f"⚠️ Data quality score is low ({stats.data_quality_score:.0f}/100). Address missing data and class imbalance before training."
+        elif stats.data_quality_score < 80:
+            insights["data_quality"] = f"Data quality is moderate ({stats.data_quality_score:.0f}/100). Some preprocessing recommended."
+        else:
+            insights["data_quality"] = f"✅ Good data quality ({stats.data_quality_score:.0f}/100)."
         
         return insights
 

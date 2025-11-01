@@ -166,12 +166,13 @@ class ClassificationEvaluator:
         
         return comparison
     
-    def get_leaderboard(self, metric: str = 'accuracy') -> List[Dict[str, Any]]:
+    def get_leaderboard(self, metric: str = 'accuracy', penalize_overfitting: bool = True) -> List[Dict[str, Any]]:
         """
-        Get model leaderboard sorted by metric.
+        Get model leaderboard sorted by metric with optional overfitting penalty.
         
         Args:
             metric: Metric to sort by
+            penalize_overfitting: If True, penalizes models with high train/test gap
             
         Returns:
             Sorted list of model results
@@ -181,15 +182,35 @@ class ClassificationEvaluator:
         for model_name, results in self.results.items():
             metric_key = f'{metric}_mean'
             if metric_key in results:
+                score = results[metric_key]
+                
+                # Calculate adjusted score considering overfitting
+                adjusted_score = score
+                if penalize_overfitting:
+                    # Get test accuracy (actual performance)
+                    test_acc = results.get('test_accuracy', score)
+                    train_acc = results.get('train_accuracy', score)
+                    gap = abs(train_acc - test_acc)
+                    
+                    # Penalty: 0.5 weight means 10% gap reduces score by 5%
+                    # This makes LogisticRegression (gap 0.01, test 0.335) beat KNN (gap 0.21, test 0.340)
+                    overfitting_penalty = gap * 0.5
+                    adjusted_score = test_acc - overfitting_penalty
+                
                 leaderboard.append({
                     'model': model_name,
-                    'score': results[metric_key],
+                    'score': score,  # Original score for display
+                    'adjusted_score': adjusted_score,  # Score with overfitting penalty
                     'ci_lower': results.get(f'{metric}_ci_lower', 0),
-                    'ci_upper': results.get(f'{metric}_ci_upper', 0)
+                    'ci_upper': results.get(f'{metric}_ci_upper', 0),
+                    'test_accuracy': results.get('test_accuracy', score),
+                    'train_accuracy': results.get('train_accuracy', score),
+                    'overfitting_gap': abs(results.get('train_accuracy', score) - results.get('test_accuracy', score))
                 })
         
-        # Sort by score (descending)
-        leaderboard.sort(key=lambda x: x['score'], reverse=True)
+        # Sort by adjusted score (considers overfitting) or original score
+        sort_key = 'adjusted_score' if penalize_overfitting else 'score'
+        leaderboard.sort(key=lambda x: x[sort_key], reverse=True)
         
         return leaderboard
     
@@ -286,14 +307,36 @@ class ClassificationEvaluator:
             logger.warning(f"CV failed for {model_name}: {e}")
             cv_scores_list = [0.0]
         
-        # Train on FULL training set
+        # Train on FULL training set (with optimization for SVM on large datasets)
         logger.info(f"Training {model_name} on full set ({n_train} samples)...")
-        try:
-            model.fit(X_train, y_train)
-            logger.info(f"{model_name} complete!")
-        except Exception as e:
-            logger.error(f"Error training {model_name}: {e}")
-            raise
+        
+        # CRITICAL OPTIMIZATION: For SVM on very large datasets, train on subset
+        if 'SVM' in model_name and n_train > 20000:
+            max_svm_samples = 15000
+            logger.info(f"⚡ {model_name}: Using {max_svm_samples:,} samples for faster training")
+            
+            from sklearn.model_selection import train_test_split
+            X_train_subset, _, y_train_subset, _ = train_test_split(
+                X_train, y_train,
+                train_size=max_svm_samples,
+                stratify=y_train,
+                random_state=42
+            )
+            
+            try:
+                model.fit(X_train_subset, y_train_subset)
+                logger.info(f"{model_name} complete on subset!")
+            except Exception as e:
+                logger.error(f"Error training {model_name}: {e}")
+                raise
+        else:
+            # Normal training for other models or smaller datasets
+            try:
+                model.fit(X_train, y_train)
+                logger.info(f"{model_name} complete!")
+            except Exception as e:
+                logger.error(f"Error training {model_name}: {e}")
+                raise
         
         # Evaluate on training set (to detect overfitting)
         y_train_pred = model.predict(X_train)
