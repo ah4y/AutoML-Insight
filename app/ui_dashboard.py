@@ -24,6 +24,8 @@ from core.explain import ModelExplainer
 from core.meta_selector import MetaModelSelector
 from core.ensemble import AdaptiveEnsemble
 from core.ai_insights import get_ai_engine  # NEW: AI insights
+from core.dimred import DimRedConfig, load_dimred_config  # NEW: Dimensionality reduction
+from core.dimred_evaluator import DimRedEvaluator  # NEW: Enhanced evaluation with dimred
 from utils.seed_utils import set_seed
 from utils.logging_utils import setup_logger
 from sklearn.datasets import load_iris, load_wine
@@ -63,7 +65,14 @@ class AutoMLDashboard:
             'jupyter_server_url': '',
             'jupyter_token': '',
             'jupyter_connected': False,
-            'remote_logs': []
+            'remote_logs': [],
+            # NEW: Dimensionality Reduction settings
+            'dimred_enabled': 'auto',  # off, on, auto
+            'dimred_method': 'auto',   # pca, tsvd, ipca, auto  
+            'dimred_variance_target': 0.95,
+            'dimred_k_max': 256,
+            'dimred_config': None,
+            'dimred_results': None
         }
         for key, value in defaults.items():
             if key not in st.session_state:
@@ -260,6 +269,50 @@ class AutoMLDashboard:
             # Show connection UI for remote mode
             if st.session_state.execution_mode == "remote":
                 self.render_jupyter_connection()
+            
+            # NEW: Dimensionality Reduction Controls
+            st.sidebar.markdown("---")
+            st.sidebar.subheader("📐 Dimensionality Reduction")
+            
+            dimred_enabled = st.sidebar.selectbox(
+                "Enable Dimred",
+                options=["auto", "on", "off"],
+                index=0,  # Default to auto
+                help="Auto: Enable for high-dim data, On: Always enable, Off: Disable"
+            )
+            st.session_state.dimred_enabled = dimred_enabled
+            
+            if dimred_enabled != "off":
+                col1, col2 = st.sidebar.columns(2)
+                
+                with col1:
+                    dimred_method = st.selectbox(
+                        "Method",
+                        options=["auto", "pca", "tsvd", "ipca"],
+                        index=0,
+                        help="Auto: Choose based on data, PCA: Dense data, TSVD: Sparse data, IPCA: Very large data"
+                    )
+                    st.session_state.dimred_method = dimred_method
+                
+                with col2:
+                    dimred_variance_target = st.slider(
+                        "Variance Target",
+                        min_value=0.8,
+                        max_value=0.99,
+                        value=0.95,
+                        step=0.01,
+                        help="Target explained variance for PCA"
+                    )
+                    st.session_state.dimred_variance_target = dimred_variance_target
+                
+                dimred_k_max = st.sidebar.number_input(
+                    "Max Components",
+                    min_value=2,
+                    max_value=1000,
+                    value=256,
+                    help="Maximum number of components for TSVD/IPCA"
+                )
+                st.session_state.dimred_k_max = dimred_k_max
             
             # Random seed
             random_seed = st.sidebar.number_input(
@@ -655,9 +708,22 @@ class AutoMLDashboard:
             st.session_state.profiler = profiler
             st.session_state.profile = profile
             
-            # Preprocess with smart feature selection
+            # Create dimensionality reduction config from UI
+            dimred_config = DimRedConfig(
+                enable=st.session_state.get('dimred_enabled', 'auto'),
+                method=st.session_state.get('dimred_method', 'auto'),
+                variance_target=st.session_state.get('dimred_variance_target', 0.95),
+                k_max=st.session_state.get('dimred_k_max', 256),
+                whiten=True,
+                seed=st.session_state.get('random_seed', 42)
+            )
+            
+            # Preprocess with smart feature selection and dimred
             st.info("🔧 Preprocessing data...")
-            preprocessor = DataPreprocessor(max_features=max_features)
+            preprocessor = DataPreprocessor(
+                max_features=max_features,
+                dimred_config=dimred_config
+            )
             X_processed, y_processed = preprocessor.fit_transform(X, y)
             
             # Check class distribution AFTER preprocessing
@@ -753,6 +819,38 @@ class AutoMLDashboard:
         
         # Evaluate models with holdout set
         evaluator = ClassificationEvaluator(n_folds=n_folds, n_repeats=n_repeats)
+        
+        # NEW: Dimensionality reduction evaluation
+        if st.session_state.get('dimred_enabled') != 'off':
+            st.info("📐 Evaluating dimensionality reduction impact...")
+            dimred_evaluator = DimRedEvaluator(
+                base_config=dimred_config,
+                random_state=st.session_state.random_seed
+            )
+            
+            # Run dimred comparison for representative models
+            representative_models = {}
+            for name, model in models.items():
+                if any(key in name.lower() for key in ['logistic', 'random forest', 'xgboost']):
+                    representative_models[name] = model
+                if len(representative_models) >= 2:  # Test with 2-3 representative models
+                    break
+            
+            dimred_results = dimred_evaluator.evaluate_models_with_dimred(
+                representative_models, X_train, y_train, task_type="classification"
+            )
+            
+            # Store dimred results for PCA tab
+            st.session_state.dimred_results = dimred_results
+            
+            # Show dimred summary
+            if dimred_results.get('recommended_config'):
+                rec_config = dimred_results['recommended_config']
+                if rec_config.enable == 'on':
+                    st.success(f"✅ Dimensionality reduction recommended: {rec_config.method.upper()}")
+                else:
+                    st.info("💡 Dimensionality reduction may not improve performance for this dataset")
+        
         results = {}
         
         # NEW: Display CV Strategy Info
@@ -824,6 +922,46 @@ class AutoMLDashboard:
         # Get models
         models = get_clustering_models(st.session_state.random_seed)
         
+        # NEW: Dimensionality reduction evaluation for clustering
+        if st.session_state.get('dimred_enabled') != 'off':
+            st.info("📐 Evaluating dimensionality reduction impact on clustering...")
+            
+            # Get dimred config from session state  
+            dimred_config = DimRedConfig(
+                enable=st.session_state.get('dimred_enabled', 'auto'),
+                method=st.session_state.get('dimred_method', 'auto'),
+                variance_target=st.session_state.get('dimred_variance_target', 0.95),
+                k_max=st.session_state.get('dimred_k_max', 256),
+                whiten=True,
+                seed=st.session_state.get('random_seed', 42)
+            )
+            
+            dimred_evaluator = DimRedEvaluator(
+                base_config=dimred_config,
+                random_state=st.session_state.random_seed
+            )
+            
+            # Test dimred impact with representative clustering models
+            representative_models = {
+                name: model for name, model in models.items() 
+                if name in ['KMeans', 'DBSCAN']  # Test with common clustering methods
+            }
+            
+            dimred_results = dimred_evaluator.evaluate_models_with_dimred(
+                representative_models, X, None, task_type="clustering"
+            )
+            
+            # Store dimred results for PCA tab
+            st.session_state.dimred_results = dimred_results
+            
+            # Show dimred summary
+            if dimred_results.get('recommended_config'):
+                rec_config = dimred_results['recommended_config']
+                if rec_config.enable == 'on':
+                    st.success(f"✅ Dimensionality reduction recommended for clustering: {rec_config.method.upper()}")
+                else:
+                    st.info("💡 Dimensionality reduction may not improve clustering for this dataset")
+        
         # Evaluate models
         evaluator = ClusteringEvaluator()
         results = {}
@@ -847,10 +985,11 @@ class AutoMLDashboard:
     
     def render_tabs(self):
         """Render main content tabs."""
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
             "📊 Data Overview",
             "🤖 Models",
-            "🔍 Explainability",
+            "📐 PCA Analysis",
+            "🔍 Explainability", 
             "🎯 Recommendation",
             "📄 Report"
         ])
@@ -865,13 +1004,131 @@ class AutoMLDashboard:
                 self.render_clustering_results()
         
         with tab3:
-            self.render_explainability()
+            self.render_pca_analysis()
         
         with tab4:
-            self.render_recommendation()
+            self.render_explainability()
         
         with tab5:
+            self.render_recommendation()
+        
+        with tab6:
             self.render_report()
+    
+    def render_pca_analysis(self):
+        """Render PCA analysis tab with dimensionality reduction insights."""
+        st.subheader("📐 Dimensionality Reduction Analysis")
+        
+        if st.session_state.uploaded_data is None:
+            st.warning("⚠️ Please upload data first to view PCA analysis.")
+            return
+        
+        # Check if dimred was enabled and run
+        if not hasattr(st.session_state, 'dimred_results') or st.session_state.dimred_results is None:
+            st.info("💡 Dimensionality reduction analysis will appear here after running AutoML.")
+            
+            # Show preview of what dimred can do
+            st.markdown("### 🎯 What You'll See Here")
+            st.markdown("""
+            - **Scree Plot**: Shows how many components capture most variance
+            - **2D Visualization**: Projects your data into principal components  
+            - **Performance Impact**: How dimred affects model accuracy
+            - **Recommendations**: When to use PCA vs other methods
+            """)
+            
+            # Current dimred settings preview
+            st.markdown("### ⚙️ Current Settings")
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Method", st.session_state.get('dimred_method', 'auto').upper())
+            with col2:
+                st.metric("Variance Target", f"{st.session_state.get('dimred_variance_target', 0.95):.0%}")
+            with col3:
+                st.metric("Max Components", st.session_state.get('dimred_k_max', 256))
+            return
+        
+        # Display dimred results
+        dimred_results = st.session_state.dimred_results
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### 📈 Explained Variance")
+            
+            # Show scree plot if PCA was used
+            if 'pca_transformer' in dimred_results:
+                from core.visualize import plot_pca_scree
+                fig = plot_pca_scree(dimred_results['pca_transformer'])
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Scree plot available for PCA method only")
+        
+        with col2:
+            st.markdown("#### 🎯 Performance Impact")
+            
+            # Show comparison metrics
+            if 'comparison_metrics' in dimred_results:
+                metrics = dimred_results['comparison_metrics']
+                
+                baseline_score = metrics.get('baseline_score', 0)
+                dimred_score = metrics.get('dimred_score', 0)
+                improvement = dimred_score - baseline_score
+                
+                col_a, col_b, col_c = st.columns(3)
+                with col_a:
+                    st.metric("Baseline", f"{baseline_score:.3f}")
+                with col_b:
+                    st.metric("With DimRed", f"{dimred_score:.3f}")
+                with col_c:
+                    st.metric("Improvement", f"{improvement:+.3f}")
+            
+            # Show statistical significance
+            if 'p_value' in dimred_results:
+                p_val = dimred_results['p_value']
+                is_significant = p_val < 0.05
+                
+                if is_significant:
+                    st.success(f"✅ Statistically significant improvement (p={p_val:.3f})")
+                else:
+                    st.warning(f"⚠️ No significant improvement (p={p_val:.3f})")
+        
+        # 2D projection visualization
+        if 'transformed_data' in dimred_results and st.session_state.dimred_method == 'pca':
+            st.markdown("#### 🔍 2D Principal Component Projection")
+            
+            from core.visualize import plot_pca_2d_scatter
+            
+            # Use target if available for coloring
+            y = st.session_state.get('target_data')
+            fig = plot_pca_2d_scatter(
+                dimred_results['transformed_data'], 
+                dimred_results['pca_transformer'],
+                y=y
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # AI recommendations
+        st.markdown("#### 🤖 AI Recommendations")
+        
+        data_shape = st.session_state.uploaded_data.shape
+        n_samples, n_features = data_shape
+        
+        recommendations = []
+        
+        if n_features > 1000:
+            recommendations.append("✅ Your data has many features - dimensionality reduction can significantly speed up training")
+        
+        if n_samples < n_features:
+            recommendations.append("⚠️ You have more features than samples - consider stronger regularization or feature selection")
+        
+        if st.session_state.get('dimred_method') == 'auto':
+            if hasattr(st.session_state.uploaded_data, 'sparse'):
+                recommendations.append("💡 Sparse data detected - TruncatedSVD is recommended over PCA")
+            else:
+                recommendations.append("💡 Dense data detected - PCA will work well for dimensionality reduction")
+        
+        for rec in recommendations:
+            st.info(rec)
     
     def render_data_overview(self):
         """Render data overview tab."""
