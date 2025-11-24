@@ -19,6 +19,15 @@ preprocessing:
   remove_low_variance: true
   variance_threshold: 0.01
 
+# Dimensionality Reduction
+dimred:
+  enable: "auto"  # off|on|auto - Auto enables for high-dim datasets
+  method: "auto"  # pca|tsvd|ipca|auto - Auto selects based on data characteristics
+  variance_target: 0.95  # Target explained variance for PCA
+  k_max: 256  # Maximum components for TSVD/IPCA
+  whiten: true  # Apply whitening transformation for PCA
+  seed: 42  # Random seed for reproducibility
+
 # Cross-Validation Strategy
 cross_validation:
   n_folds:

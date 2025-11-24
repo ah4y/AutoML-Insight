@@ -1,4 +1,4 @@
-"""Data preprocessing pipeline with two-stage feature selection."""
+"""Data preprocessing pipeline with two-stage feature selection and optional dimensionality reduction."""
 
 import pandas as pd
 import numpy as np
@@ -10,6 +10,7 @@ from sklearn.feature_selection import VarianceThreshold, SelectKBest, f_classif,
 from typing import Tuple, Optional, List, Any
 import logging
 from utils.logging_utils import setup_logger
+from core.dimred import DimRedConfig, DimRedSelector, make_dimred
 
 
 class DataPreprocessor:
@@ -30,12 +31,13 @@ class DataPreprocessor:
         label_encoder (Optional[LabelEncoder]): Fitted label encoder for target
     """
     
-    def __init__(self, max_features: int = 1000) -> None:
+    def __init__(self, max_features: int = 1000, dimred_config: Optional[DimRedConfig] = None) -> None:
         """
         Initialize the preprocessor.
         
         Args:
             max_features: Maximum number of features to keep (default: 1000)
+            dimred_config: Dimensionality reduction configuration (optional)
         """
         self.preprocessor: Optional[ColumnTransformer] = None
         self.numeric_features: List[str] = []
@@ -45,6 +47,9 @@ class DataPreprocessor:
         self.max_features: int = max_features
         self.feature_selector: Optional[SelectKBest] = None
         self.label_encoder: Optional[LabelEncoder] = None
+        self.dimred_config: DimRedConfig = dimred_config or DimRedConfig()
+        self.dimred_selector: Optional[DimRedSelector] = None
+        self.is_sparse_after_ohe: bool = False
     
     def fit_transform(
         self, 
@@ -187,6 +192,9 @@ class DataPreprocessor:
         ])
         
         # Categorical pipeline: impute + one-hot encode
+        # We'll detect if this will be sparse for dimred decision
+        self.is_sparse_after_ohe = len(self.categorical_features) > 0
+        
         categorical_pipeline = Pipeline([
             ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),
             ('onehot', OneHotEncoder(handle_unknown='ignore', sparse_output=False))
@@ -209,6 +217,18 @@ class DataPreprocessor:
         
         # Extract feature names
         self.feature_names = self._get_feature_names()
+        
+        # Apply dimensionality reduction if configured
+        n_samples, n_features = X_transformed.shape
+        self.dimred_selector = DimRedSelector(self.dimred_config)
+        
+        # Fit and transform with dimred
+        X_transformed = self.dimred_selector.fit_transform(X_transformed, y)
+        
+        # Update feature names if dimred was applied
+        if self.dimred_selector.dimred_transformer is not None:
+            dimred_feature_names = self.dimred_selector.get_feature_names_out(self.feature_names)
+            self.feature_names = list(dimred_feature_names)
         
         # Apply feature selection if we have too many features
         if X_transformed.shape[1] > self.max_features and y is not None:
@@ -275,6 +295,10 @@ class DataPreprocessor:
             raise ValueError("Preprocessor not fitted. Call fit_transform first.")
         
         X_transformed = self.preprocessor.transform(X)
+        
+        # Apply dimensionality reduction if it was used during training
+        if self.dimred_selector is not None:
+            X_transformed = self.dimred_selector.transform(X_transformed)
         
         # Apply feature selection if it was used during training
         if self.feature_selector is not None:
