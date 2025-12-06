@@ -7,19 +7,20 @@
 
 ## ✨ Features
 
-- 🧠 **AI-Powered Insights**: Dynamic analysis using Groq/OpenAI/Gemini LLMs at every workflow stage with intelligent rate limit handling and caching
-- 📊 **Automatic Dataset Profiling**: Comprehensive statistical analysis and meta-feature extraction
-- 🤖 **13+ ML Models**: 7 supervised (LogReg, SVM, RF, XGBoost, MLP) + 6 clustering algorithms with adaptive optimization
+- 🧠 **Enhanced AI Analysis Engine**: Comprehensive dataset insights with 15+ statistical metrics and intelligent quality scoring
+- 📊 **Advanced Dataset Profiling**: Multi-dimensional analysis including data quality, distribution patterns, and correlation insights
+- 🤖 **Professional AutoML Pipeline**: Dual-mode operation with timeout protection and robust optimization handling
 - 📈 **Rigorous Evaluation**: Nested cross-validation with confidence intervals and statistical tests
+- 📐 **Intelligent Dimensionality Reduction**: Auto-selecting PCA/TruncatedSVD/IncrementalPCA with leakage-safe pipelines and statistical impact evaluation
 - 🔍 **Model Explainability**: SHAP-based explanations, feature importance, and interpretability with per-model caching
 - 🎯 **Smart Recommendations**: Meta-learning engine with AI-enhanced deployment guidance and overfitting penalties
-- 🔧 **Hyperparameter Tuning**: Optuna-based optimization with nested CV
-- 📊 **Interactive Dashboard**: Streamlit UI with professional Plotly visualizations and real-time AI analysis
+- 🔧 **Advanced Hyperparameter Tuning**: Optuna-based optimization with enhanced progress tracking and failure recovery
+- 📊 **Professional Dashboard Interface**: Streamlit UI with feature engineering workflow and centered layout design
 - 📄 **AI-Generated Reports**: Comprehensive reports with executive summaries and rule-based fallbacks
 - 🌐 **Remote Execution**: Jupyter server integration for scalable cloud-based training
 - 🛡️ **Intelligent Overfitting Detection**: Model-specific warnings with severity levels and actionable recommendations
 - 📈 **Professional Clustering Visualizations**: 4 interactive tabs (PCA projection, distribution, silhouette, profiles)
-- 🧪 **Production-Ready**: Modular OOP design, logging, testing, and reproducibility
+- 🧪 **Production-Ready**: Modular OOP design with enhanced error handling, logging, and reproducibility
 
 ## 🏗️ Architecture
 
@@ -32,8 +33,12 @@ AutoML-Insight/
 │   └── config.yaml        # App configuration
 ├── core/                  # Core ML components
 │   ├── ai_insights.py     # AI engine (Groq/OpenAI/Gemini)
+│   ├── ai_insights_enhanced.py  # Enhanced AI analysis engine
+│   ├── advanced_optimization.py # Professional AutoML pipeline
 │   ├── data_profile.py    # Dataset profiling
 │   ├── preprocess.py      # Data preprocessing
+│   ├── dimred.py          # Dimensionality reduction factory
+│   ├── dimred_evaluator.py # Dimred impact evaluation
 │   ├── models_supervised.py  # 7 supervised models
 │   ├── models_clustering.py  # 6 clustering algorithms
 │   ├── tuning.py          # Hyperparameter tuning
@@ -125,6 +130,92 @@ python experiments/run_experiment.py --config experiments/configs/default.yaml
 3. Configure settings (random seed, etc.)
 4. Click "🚀 Run AutoML"
 5. Explore results in multiple tabs
+
+## 📐 Dimensionality Reduction
+
+AutoML-Insight includes intelligent dimensionality reduction with automatic method selection and statistical evaluation:
+
+### Supported Methods
+
+- **PCA (Principal Component Analysis)**: For dense datasets with linear relationships
+- **TruncatedSVD**: For sparse datasets (e.g., text data, one-hot encoded features)
+- **IncrementalPCA**: For large datasets that don't fit in memory
+
+### Auto-Selection Logic
+
+The system automatically chooses the best method based on data characteristics:
+
+```yaml
+# Configuration (config.yaml)
+dimred:
+  enable: "auto"              # off | auto | on
+  method: "auto"              # auto | pca | tsvd | ipca
+  variance_target: 0.95       # Target explained variance (80%-99%)
+  k_max: 256                  # Maximum components for TSVD/IPCA
+  whiten: true                # Apply whitening for PCA
+  seed: 42                    # Random seed for reproducibility
+```
+
+### Selection Criteria
+
+- **Sparse Data (>10% zeros)** → TruncatedSVD
+- **Large Datasets (>50K samples)** → IncrementalPCA  
+- **Dense, Moderate Data** → PCA
+- **High Dimensionality (>100 features)** → Enable dimred
+- **Feature-to-Sample Ratio >0.5** → Enable dimred
+
+### Statistical Evaluation
+
+AutoML-Insight evaluates dimensionality reduction impact using rigorous methodology:
+
+- **Nested Cross-Validation**: Prevents data leakage during evaluation
+- **Wilcoxon Signed-Rank Test**: Statistical significance testing
+- **Model-Specific Assessment**: Linear models benefit more than tree models
+- **Performance Comparison**: Baseline vs. dimred performance with confidence intervals
+
+### PCA Analysis Tab
+
+The dedicated "📐 PCA Analysis" tab provides:
+
+- **Scree Plot**: Explained variance by component
+- **2D Projection**: Data visualization in principal component space
+- **Performance Metrics**: Statistical comparison of with/without dimred
+- **AI Recommendations**: Intelligent suggestions based on data characteristics
+
+### Example Usage
+
+```python
+from core.dimred import DimRedConfig, DimRedSelector
+from core.dimred_evaluator import DimRedEvaluator
+
+# Create configuration
+config_dict = {
+    'dimred': {
+        'enable': 'auto',
+        'method': 'auto', 
+        'variance_target': 0.95
+    }
+}
+config = DimRedConfig(config_dict)
+
+# Use in preprocessing pipeline
+selector = DimRedSelector(config)
+X_transformed = selector.fit_transform(X)
+
+# Evaluate impact
+evaluator = DimRedEvaluator(config)
+results = evaluator.evaluate_models_with_dimred(
+    models, X, y, task_type="classification"
+)
+```
+
+### Benefits
+
+- **Faster Training**: Reduced feature space speeds up model training
+- **Noise Reduction**: PCA can filter out noisy dimensions
+- **Visualization**: 2D/3D projections for data exploration
+- **Memory Efficiency**: Smaller feature matrices
+- **Leakage Prevention**: Proper nested CV ensures valid evaluation
 
 ## 🤖 Supported Models
 
