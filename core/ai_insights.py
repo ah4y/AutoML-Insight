@@ -27,7 +27,8 @@ _ai_response_cache: Dict[str, Dict[str, Any]] = {}
 
 @dataclass
 class DatasetStatistics:
-    """Container for dataset statistics to send to LLM."""
+    """Container for comprehensive dataset statistics to send to LLM."""
+    # Basic info
     n_samples: int
     n_features: int
     n_numeric: int
@@ -39,6 +40,19 @@ class DatasetStatistics:
     feature_correlations: List[Tuple[str, str, float]]
     top_features: List[str]
     data_quality_score: float
+    
+    # Enhanced metrics
+    outlier_rate: float
+    skewness_summary: Dict[str, float]  # high_skew_features -> skewness values
+    variance_summary: Dict[str, float]  # low/high variance features
+    categorical_cardinality: Dict[str, int]  # feature -> unique values
+    data_types_detailed: Dict[str, str]  # feature -> detailed type
+    correlation_with_target: List[Tuple[str, float]]  # top correlated with target
+    feature_importance_proxy: Dict[str, float]  # simple importance estimates
+    potential_issues: List[str]  # detected data issues
+    domain_insights: Dict[str, Any]  # domain-specific patterns
+    dataset_complexity: str  # simple, moderate, complex
+    memory_usage_mb: float
 
 
 class AIInsightEngine:
@@ -247,58 +261,36 @@ class AIInsightEngine:
     def _build_prompt(self, stats: DatasetStatistics, context: str) -> str:
         """Build prompt for LLM based on statistics and context."""
         
-        base_info = f"""You are an expert data scientist analyzing a machine learning dataset.
-
-Dataset Overview:
-- Samples: {stats.n_samples:,}
-- Features: {stats.n_features} ({stats.n_numeric} numeric, {stats.n_categorical} categorical)
+        # Much shorter, more focused prompt to prevent API errors
+        base_info = f"""Dataset Analysis:
+- {stats.n_samples:,} samples, {stats.n_features} features
+- {stats.n_numeric} numeric, {stats.n_categorical} categorical
 - Task: {stats.target_type}
 - Classes: {stats.n_classes if stats.n_classes else 'N/A'}
-- Missing Data: {stats.missing_rate:.1%}
-- Data Quality Score: {stats.data_quality_score:.1f}/100
-
+- Missing: {stats.missing_rate:.1%}
 """
         
-        if stats.class_balance:
-            base_info += f"\nClass Distribution:\n"
-            for cls, ratio in stats.class_balance.items():
-                base_info += f"  - Class {cls}: {ratio:.1%}\n"
-        
-        if stats.feature_correlations:
-            base_info += f"\nTop Feature Correlations:\n"
-            for feat1, feat2, corr in stats.feature_correlations[:3]:
-                base_info += f"  - {feat1} ↔ {feat2}: {corr:.3f}\n"
+        # Only add most critical info to keep prompt short
+        if stats.class_balance and len(stats.class_balance) <= 10:  # Only for small number of classes
+            base_info += f"Top classes: {list(stats.class_balance.keys())[:3]}\n"
         
         if context == "initial_analysis":
             prompt = base_info + """
-Provide a brief, actionable analysis in JSON format with these keys:
-1. "summary": 2-3 sentence overview of the dataset
-2. "strengths": List 2-3 positive aspects
-3. "challenges": List 2-3 potential issues or challenges
-4. "recommendations": List 3-4 specific preprocessing or modeling recommendations
+Provide brief JSON insights:
+{"summary": "1 sentence overview", "strengths": ["2 items"], "challenges": ["2 items"], "recommendations": ["2-3 items"]}
 
-Be concise and data-driven. Focus on actionable insights."""
-
+Be concise."""
         elif context == "model_selection":
             prompt = base_info + """
-Recommend the best ML models for this dataset in JSON format:
-1. "top_models": List 3 recommended models with brief justification
-2. "avoid_models": List 1-2 models to avoid with reasons
-3. "hyperparameter_focus": Key hyperparameters to tune
-
-Consider dataset size, feature types, and class balance."""
-
-        elif context == "results_interpretation":
-            prompt = base_info + """
-Provide interpretation guidance in JSON format:
-1. "key_metrics": Which metrics matter most for this dataset and why
-2. "expected_performance": Realistic performance expectations
-3. "red_flags": What results would indicate problems
-
-Be specific to this dataset's characteristics."""
-
+Recommend best ML models in JSON format:
+{"top_models": ["3 models"], "avoid_models": ["1-2 models"], "hyperparameter_focus": ["key params"]}"""
         else:
             prompt = base_info + "\nProvide key insights about this dataset."
+
+        
+        # Safety check: Limit prompt length to prevent API errors (max ~1000 chars)
+        if len(prompt) > 1000:
+            prompt = prompt[:900] + "...\n\nProvide brief insights based on the above dataset characteristics."
         
         return prompt
     

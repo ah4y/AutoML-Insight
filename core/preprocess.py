@@ -7,7 +7,7 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.feature_selection import VarianceThreshold, SelectKBest, f_classif, f_regression
-from typing import Tuple, Optional, List, Any
+from typing import Tuple, Optional, List, Any, Dict
 import logging
 from utils.logging_utils import setup_logger
 from core.dimred import DimRedConfig, DimRedSelector, make_dimred
@@ -80,6 +80,13 @@ class DataPreprocessor:
             >>> print(X_train_transformed.shape)
             (150, 100)
         """
+        # Handle numpy arrays by converting to DataFrame
+        if isinstance(X, np.ndarray):
+            # Create DataFrame with generic column names
+            feature_names = [f'feature_{i}' for i in range(X.shape[1])]
+            X = pd.DataFrame(X, columns=feature_names)
+            self.logger.warning("Input was numpy array, converted to DataFrame with generic column names")
+        
         # Remove constant features first (zero variance)
         constant_features = X.columns[X.nunique() <= 1].tolist()
         if constant_features:
@@ -340,3 +347,34 @@ class DataPreprocessor:
             List of feature names after preprocessing and selection
         """
         return self.feature_names
+    
+    def get_params(self, deep: bool = True) -> Dict[str, Any]:
+        """
+        Get parameters for this estimator (sklearn compatibility).
+        
+        Args:
+            deep: If True, return parameters for this estimator and 
+                  contained subobjects that are estimators
+                  
+        Returns:
+            Dictionary of parameter names mapped to their values
+        """
+        params: Dict[str, Any] = {
+            'max_features': self.max_features,
+            'dimred_config': self.dimred_config
+        }
+        return params
+    
+    def set_params(self, **params: Any) -> 'DataPreprocessor':
+        """
+        Set parameters for this estimator (sklearn compatibility).
+        
+        Args:
+            **params: Estimator parameters
+            
+        Returns:
+            Self
+        """
+        for parameter, value in params.items():
+            setattr(self, parameter, value)
+        return self

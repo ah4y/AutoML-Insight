@@ -16,20 +16,27 @@ from utils.logging_utils import setup_logger
 class DimRedConfig:
     """Configuration class for dimensionality reduction parameters."""
     
-    def __init__(self, config_dict: Optional[Dict[str, Any]] = None):
-        """Initialize with configuration dictionary or defaults."""
+    def __init__(self, config_dict: Optional[Dict[str, Any]] = None, 
+                 enable: Optional[str] = None,
+                 method: Optional[str] = None,
+                 variance_target: Optional[float] = None,
+                 k_max: Optional[int] = None,
+                 whiten: Optional[bool] = None,
+                 seed: Optional[int] = None):
+        """Initialize with configuration dictionary or individual parameters."""
         if config_dict is None:
             config_dict = {}
         
         # Extract dimred config with safe defaults
         dimred_config = config_dict.get('dimred', {})
         
-        self.enable = dimred_config.get('enable', 'auto')
-        self.method = dimred_config.get('method', 'auto')
-        self.variance_target = dimred_config.get('variance_target', 0.95)
-        self.k_max = dimred_config.get('k_max', 256)
-        self.whiten = dimred_config.get('whiten', True)
-        self.seed = dimred_config.get('seed', 42)
+        # Use individual parameters if provided, otherwise fall back to config_dict
+        self.enable = enable if enable is not None else dimred_config.get('enable', 'auto')
+        self.method = method if method is not None else dimred_config.get('method', 'auto')
+        self.variance_target = variance_target if variance_target is not None else dimred_config.get('variance_target', 0.95)
+        self.k_max = k_max if k_max is not None else dimred_config.get('k_max', 256)
+        self.whiten = whiten if whiten is not None else dimred_config.get('whiten', True)
+        self.seed = seed if seed is not None else dimred_config.get('seed', 42)
         
         # Validation
         if self.enable not in ['off', 'on', 'auto']:
@@ -146,14 +153,31 @@ def make_dimred(
     
     # Create the transformer based on selected method
     if method == 'pca':
-        # Use randomized SVD for efficiency with dense matrices
-        transformer = PCA(
-            n_components=cfg.variance_target,  # Will keep components explaining this variance
-            svd_solver='randomized',
-            whiten=cfg.whiten,
-            random_state=cfg.seed
-        )
-        logger.info(f"Created PCA with {cfg.variance_target:.1%} variance target")
+        # For PCA, handle variance target properly
+        if cfg.variance_target < 1.0:
+            # Use 'full' solver which supports variance targets
+            transformer = PCA(
+                n_components=cfg.variance_target,  # Variance ratio (0.0-1.0)
+                svd_solver='full',  # Required for variance targets
+                whiten=cfg.whiten,
+                random_state=cfg.seed
+            )
+            logger.info(f"Created PCA with {cfg.variance_target:.1%} variance target")
+        else:
+            # Use explicit number of components
+            n_components = min(
+                cfg.k_max,
+                max(2, int(np.sqrt(n_features))),
+                n_features - 1,
+                n_samples - 1
+            )
+            transformer = PCA(
+                n_components=n_components,
+                svd_solver='randomized',  # Faster for explicit components
+                whiten=cfg.whiten,
+                random_state=cfg.seed
+            )
+            logger.info(f"Created PCA with {n_components} components")
         
     elif method == 'tsvd':
         # TruncatedSVD for sparse matrices
@@ -201,8 +225,12 @@ class DimRedSelector(BaseEstimator, TransformerMixin):
     
     def __init__(self, cfg: DimRedConfig):
         """Initialize with configuration."""
-        self.cfg = cfg
+        self.config = cfg  # For test compatibility
+        self.cfg = cfg  # For internal use
         self.dimred_transformer = None
+        self.is_fitted = False  # Track fit status
+        self.transformer_ = None  # For test compatibility  
+        self.selected_method_ = None  # For test compatibility
         self.logger = setup_logger()
     
     def fit(self, X, y=None):
@@ -232,9 +260,26 @@ class DimRedSelector(BaseEstimator, TransformerMixin):
         
         # Fit the transformer if created
         if self.dimred_transformer is not None:
+            # Store method for test compatibility
+            method_name = type(self.dimred_transformer).__name__.lower()
+            if 'pca' in method_name:
+                self.selected_method_ = 'pca'
+            elif 'tsvd' in method_name or 'truncated' in method_name:
+                self.selected_method_ = 'tsvd'
+            elif 'incremental' in method_name:
+                self.selected_method_ = 'ipca'
+            
             self.logger.info(f"Fitting {type(self.dimred_transformer).__name__} on {n_samples}x{n_features} data")
             self.dimred_transformer.fit(X, y)
+            
+            # Set compatibility attributes
+            self.transformer_ = self.dimred_transformer
+        else:
+            self.logger.info("Dimensionality reduction disabled")
+            self.selected_method_ = None
+            self.transformer_ = None
         
+        self.is_fitted = True
         return self
     
     def transform(self, X):
