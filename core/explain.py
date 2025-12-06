@@ -125,7 +125,7 @@ class ModelExplainer:
             }
         
         # Coefficient importance (for linear models)
-        if hasattr(model, 'coef_'):
+        elif hasattr(model, 'coef_'):
             coef = model.coef_
             if coef.ndim > 1:
                 coef = np.abs(coef).mean(axis=0)
@@ -134,6 +134,45 @@ class ModelExplainer:
             explanations['coef_importance'] = {
                 name: float(val) for name, val in zip(self.feature_names, coef)
             }
+        
+        # If no native importance and SHAP failed, use permutation importance as fallback
+        has_feature_importance = hasattr(model, 'feature_importances_')
+        has_coef = hasattr(model, 'coef_')
+        has_shap = 'shap_importance' in explanations
+        shap_failed = 'shap_error' in explanations
+        
+        if (not has_feature_importance and not has_coef and (not has_shap or shap_failed)):
+            # Models like KNN, MLP, RBF-SVM need permutation importance
+            try:
+                # Use a subset for faster computation
+                perm_sample_size = min(200, X.shape[0])
+                if X.shape[0] > perm_sample_size:
+                    perm_indices = np.random.choice(X.shape[0], perm_sample_size, replace=False)
+                    X_perm = X[perm_indices]
+                else:
+                    X_perm = X
+                
+                # We need y for permutation importance - get from model predictions
+                y_perm = model.predict(X_perm)
+                
+                # Compute permutation importance
+                from sklearn.inspection import permutation_importance
+                perm_result = permutation_importance(
+                    model, X_perm, y_perm, 
+                    n_repeats=3, 
+                    random_state=42,
+                    n_jobs=1  # Avoid multiprocessing issues in Streamlit
+                )
+                
+                explanations['permutation_importance'] = {
+                    name: float(val) for name, val in zip(self.feature_names, perm_result.importances_mean)
+                }
+                explanations['permutation_std'] = {
+                    name: float(val) for name, val in zip(self.feature_names, perm_result.importances_std)
+                }
+                
+            except Exception as perm_error:
+                explanations['permutation_error'] = str(perm_error)
         
         return explanations
     
@@ -200,6 +239,8 @@ class ModelExplainer:
             importance_dict = explanations['feature_importance']
         elif 'coef_importance' in explanations:
             importance_dict = explanations['coef_importance']
+        elif 'permutation_importance' in explanations:
+            importance_dict = explanations['permutation_importance']
         else:
             return []
         
