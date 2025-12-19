@@ -1,4 +1,4 @@
-"""Data preprocessing pipeline with two-stage feature selection."""
+"""Data preprocessing pipeline with two-stage feature selection and optional dimensionality reduction."""
 
 import pandas as pd
 import numpy as np
@@ -7,9 +7,10 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.feature_selection import VarianceThreshold, SelectKBest, f_classif, f_regression
-from typing import Tuple, Optional, List, Any
+from typing import Tuple, Optional, List, Any, Dict
 import logging
 from utils.logging_utils import setup_logger
+from core.dimred import DimRedConfig, DimRedSelector, make_dimred
 
 
 class DataPreprocessor:
@@ -30,12 +31,13 @@ class DataPreprocessor:
         label_encoder (Optional[LabelEncoder]): Fitted label encoder for target
     """
     
-    def __init__(self, max_features: int = 1000) -> None:
+    def __init__(self, max_features: int = 1000, dimred_config: Optional[DimRedConfig] = None) -> None:
         """
         Initialize the preprocessor.
         
         Args:
             max_features: Maximum number of features to keep (default: 1000)
+            dimred_config: Dimensionality reduction configuration (optional)
         """
         self.preprocessor: Optional[ColumnTransformer] = None
         self.numeric_features: List[str] = []
@@ -45,6 +47,9 @@ class DataPreprocessor:
         self.max_features: int = max_features
         self.feature_selector: Optional[SelectKBest] = None
         self.label_encoder: Optional[LabelEncoder] = None
+        self.dimred_config: DimRedConfig = dimred_config or DimRedConfig()
+        self.dimred_selector: Optional[DimRedSelector] = None
+        self.is_sparse_after_ohe: bool = False
     
     def fit_transform(
         self, 
@@ -75,6 +80,13 @@ class DataPreprocessor:
             >>> print(X_train_transformed.shape)
             (150, 100)
         """
+        # Handle numpy arrays by converting to DataFrame
+        if isinstance(X, np.ndarray):
+            # Create DataFrame with generic column names
+            feature_names = [f'feature_{i}' for i in range(X.shape[1])]
+            X = pd.DataFrame(X, columns=feature_names)
+            self.logger.warning("Input was numpy array, converted to DataFrame with generic column names")
+        
         # Remove constant features first (zero variance)
         constant_features = X.columns[X.nunique() <= 1].tolist()
         if constant_features:
@@ -187,6 +199,9 @@ class DataPreprocessor:
         ])
         
         # Categorical pipeline: impute + one-hot encode
+        # We'll detect if this will be sparse for dimred decision
+        self.is_sparse_after_ohe = len(self.categorical_features) > 0
+        
         categorical_pipeline = Pipeline([
             ('imputer', SimpleImputer(strategy='constant', fill_value='missing')),
             ('onehot', OneHotEncoder(handle_unknown='ignore', sparse_output=False))
@@ -209,6 +224,18 @@ class DataPreprocessor:
         
         # Extract feature names
         self.feature_names = self._get_feature_names()
+        
+        # Apply dimensionality reduction if configured
+        n_samples, n_features = X_transformed.shape
+        self.dimred_selector = DimRedSelector(self.dimred_config)
+        
+        # Fit and transform with dimred
+        X_transformed = self.dimred_selector.fit_transform(X_transformed, y)
+        
+        # Update feature names if dimred was applied
+        if self.dimred_selector.dimred_transformer is not None:
+            dimred_feature_names = self.dimred_selector.get_feature_names_out(self.feature_names)
+            self.feature_names = list(dimred_feature_names)
         
         # Apply feature selection if we have too many features
         if X_transformed.shape[1] > self.max_features and y is not None:
@@ -276,6 +303,10 @@ class DataPreprocessor:
         
         X_transformed = self.preprocessor.transform(X)
         
+        # Apply dimensionality reduction if it was used during training
+        if self.dimred_selector is not None:
+            X_transformed = self.dimred_selector.transform(X_transformed)
+        
         # Apply feature selection if it was used during training
         if self.feature_selector is not None:
             X_transformed = self.feature_selector.transform(X_transformed)
@@ -316,3 +347,34 @@ class DataPreprocessor:
             List of feature names after preprocessing and selection
         """
         return self.feature_names
+    
+    def get_params(self, deep: bool = True) -> Dict[str, Any]:
+        """
+        Get parameters for this estimator (sklearn compatibility).
+        
+        Args:
+            deep: If True, return parameters for this estimator and 
+                  contained subobjects that are estimators
+                  
+        Returns:
+            Dictionary of parameter names mapped to their values
+        """
+        params: Dict[str, Any] = {
+            'max_features': self.max_features,
+            'dimred_config': self.dimred_config
+        }
+        return params
+    
+    def set_params(self, **params: Any) -> 'DataPreprocessor':
+        """
+        Set parameters for this estimator (sklearn compatibility).
+        
+        Args:
+            **params: Estimator parameters
+            
+        Returns:
+            Self
+        """
+        for parameter, value in params.items():
+            setattr(self, parameter, value)
+        return self

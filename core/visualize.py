@@ -484,3 +484,299 @@ class Visualizer:
         )
         
         return fig
+    
+    def plot_pca_scree(
+        self,
+        explained_variance_ratio: np.ndarray,
+        n_components_selected: int = None,
+        title: str = 'PCA Scree Plot'
+    ) -> go.Figure:
+        """
+        Create scree plot showing explained variance per component.
+        
+        Args:
+            explained_variance_ratio: Array of explained variance ratios
+            n_components_selected: Number of components selected (for marking)
+            title: Plot title
+            
+        Returns:
+            Plotly figure with scree plot
+        """
+        # Ensure we have a proper numpy array
+        explained_variance_ratio = np.asarray(explained_variance_ratio)
+        n_components = len(explained_variance_ratio)
+        components = np.arange(1, n_components + 1)
+        
+        # Create subplots for individual and cumulative variance
+        fig = make_subplots(
+            rows=1, cols=2,
+            subplot_titles=['Individual Variance', 'Cumulative Variance'],
+            specs=[[{"secondary_y": False}, {"secondary_y": False}]]
+        )
+        
+        # Individual explained variance
+        fig.add_trace(
+            go.Bar(
+                x=components,
+                y=explained_variance_ratio,
+                name='Individual',
+                marker_color='steelblue',
+                opacity=0.7
+            ),
+            row=1, col=1
+        )
+        
+        # Cumulative explained variance
+        cumulative_variance = np.cumsum(explained_variance_ratio)
+        fig.add_trace(
+            go.Scatter(
+                x=components,
+                y=cumulative_variance,
+                mode='lines+markers',
+                name='Cumulative',
+                line=dict(color='red', width=3),
+                marker=dict(size=6)
+            ),
+            row=1, col=2
+        )
+        
+        # Mark selected components if provided
+        if n_components_selected is not None and n_components_selected > 0:
+            # Mark on individual plot
+            fig.add_vline(
+                x=n_components_selected,
+                line_dash="dash",
+                line_color="red",
+                annotation_text=f"Selected: {n_components_selected}",
+                row=1, col=1
+            )
+            
+            # Mark on cumulative plot
+            selected_variance = cumulative_variance[n_components_selected - 1]
+            fig.add_hline(
+                y=selected_variance,
+                line_dash="dash",
+                line_color="red",
+                annotation_text=f"{selected_variance:.1%} variance",
+                row=1, col=2
+            )
+        
+        # Update layout
+        fig.update_xaxes(title_text="Principal Component", row=1, col=1)
+        fig.update_xaxes(title_text="Principal Component", row=1, col=2)
+        fig.update_yaxes(title_text="Explained Variance Ratio", row=1, col=1)
+        fig.update_yaxes(title_text="Cumulative Explained Variance", row=1, col=2)
+        
+        fig.update_layout(
+            title=title,
+            template='plotly_white',
+            height=400,
+            showlegend=False
+        )
+        
+        return fig
+    
+    def plot_pca_2d_scatter(
+        self,
+        X_pca: np.ndarray,
+        y: Optional[np.ndarray] = None,
+        explained_variance_ratio: Optional[np.ndarray] = None,
+        title: str = 'PCA 2D Projection'
+    ) -> go.Figure:
+        """
+        Create 2D scatter plot of first two principal components.
+        
+        Args:
+            X_pca: PCA-transformed data (n_samples, n_components)
+            y: Optional labels for coloring
+            explained_variance_ratio: Explained variance ratios for axis labels
+            title: Plot title
+            
+        Returns:
+            Plotly figure with 2D scatter plot
+        """
+        # Prepare axis labels
+        if explained_variance_ratio is not None and len(explained_variance_ratio) >= 2:
+            x_var = float(explained_variance_ratio[0]) * 100
+            y_var = float(explained_variance_ratio[1]) * 100
+            x_label = f'PC1 ({x_var:.1f}% variance)'
+            y_label = f'PC2 ({y_var:.1f}% variance)'
+        else:
+            x_label = 'PC1'
+            y_label = 'PC2'
+        
+        # Create DataFrame for plotting
+        plot_data = {
+            'PC1': X_pca[:, 0],
+            'PC2': X_pca[:, 1] if X_pca.shape[1] > 1 else np.zeros(len(X_pca))
+        }
+        
+        # Add color information if labels provided
+        if y is not None:
+            if len(np.unique(y)) <= 20:  # Discrete labels
+                plot_data['Label'] = y.astype(str)
+                color_col = 'Label'
+                color_discrete_map = None
+            else:  # Continuous values
+                plot_data['Value'] = y
+                color_col = 'Value'
+                color_discrete_map = None
+        else:
+            color_col = None
+            color_discrete_map = None
+        
+        df = pd.DataFrame(plot_data)
+        
+        # Create scatter plot
+        fig = px.scatter(
+            df,
+            x='PC1',
+            y='PC2',
+            color=color_col,
+            title=title,
+            labels={'PC1': x_label, 'PC2': y_label},
+            template='plotly_white',
+            height=500
+        )
+        
+        # Update marker properties
+        fig.update_traces(
+            marker=dict(size=6, opacity=0.7, line=dict(width=0.5, color='white'))
+        )
+        
+        return fig
+    
+    def plot_dimred_comparison_leaderboard(
+        self,
+        leaderboard: List[Dict[str, Any]],
+        metric_name: str = 'Accuracy',
+        title: str = 'Model Comparison: With vs Without Dimensionality Reduction'
+    ) -> go.Figure:
+        """
+        Create leaderboard plot that shows dimred comparison information.
+        
+        Args:
+            leaderboard: List with dimred comparison metadata
+            metric_name: Name of the metric being plotted
+            title: Plot title
+            
+        Returns:
+            Plotly figure with enhanced leaderboard
+        """
+        models = [item['model'] for item in leaderboard]
+        scores = [item['score'] for item in leaderboard]
+        ci_lower = [item.get('ci_lower', item['score']) for item in leaderboard]
+        ci_upper = [item.get('ci_upper', item['score']) for item in leaderboard]
+        
+        # Extract dimred information
+        uses_dimred = [item.get('uses_dimred', False) for item in leaderboard]
+        dimred_methods = [item.get('dimred_method', 'none') for item in leaderboard]
+        
+        # Create colors based on dimred usage
+        colors = ['orange' if used else 'steelblue' for used in uses_dimred]
+        
+        # Error bars
+        error_y = dict(
+            type='data',
+            array=[ci_upper[i] - scores[i] for i in range(len(scores))],
+            arrayminus=[scores[i] - ci_lower[i] for i in range(len(scores))],
+            visible=True
+        )
+        
+        # Create hover text with dimred information
+        hover_text = []
+        for i, item in enumerate(leaderboard):
+            text = f"Model: {models[i]}<br>"
+            text += f"{metric_name}: {scores[i]:.4f}<br>"
+            text += f"CI: [{ci_lower[i]:.4f}, {ci_upper[i]:.4f}]<br>"
+            text += f"Uses DimRed: {uses_dimred[i]}<br>"
+            if uses_dimred[i]:
+                text += f"Method: {dimred_methods[i]}<br>"
+                n_components = item.get('n_components', 0)
+                if n_components > 0:
+                    text += f"Components: {n_components}<br>"
+            
+            # Add comparison info if available
+            comparison = item.get('comparison', {})
+            if isinstance(comparison, dict) and 'improvement' in comparison:
+                improvement = comparison['improvement']
+                text += f"Improvement: {improvement:+.4f}<br>"
+                if comparison.get('is_significant', False):
+                    text += "Significant: Yes"
+                else:
+                    text += "Significant: No"
+            
+            hover_text.append(text)
+        
+        fig = go.Figure(data=go.Bar(
+            x=scores,
+            y=models,
+            orientation='h',
+            error_x=error_y,
+            marker_color=colors,
+            hovertemplate='%{customdata}<extra></extra>',
+            customdata=hover_text
+        ))
+        
+        fig.update_layout(
+            title=title,
+            xaxis_title=metric_name,
+            yaxis_title='Model',
+            template='plotly_white',
+            height=max(400, len(models) * 30),
+            showlegend=False
+        )
+        
+        # Add annotation explaining colors
+        fig.add_annotation(
+            text="🟠 With DimRed | 🔵 Without DimRed",
+            xref="paper", yref="paper",
+            x=0.02, y=0.98,
+            showarrow=False,
+            font=dict(size=12),
+            bgcolor="white",
+            bordercolor="gray",
+            borderwidth=1
+        )
+        
+        return fig
+
+
+# Standalone wrapper functions for backward compatibility
+def plot_pca_scree(pca_transformer, title: str = 'PCA Scree Plot') -> go.Figure:
+    """
+    Create scree plot from a fitted PCA transformer.
+    
+    Args:
+        pca_transformer: Fitted PCA transformer with explained_variance_ratio_
+        title: Plot title
+        
+    Returns:
+        Plotly figure with scree plot
+    """
+    if not hasattr(pca_transformer, 'explained_variance_ratio_'):
+        raise ValueError("PCA transformer must have explained_variance_ratio_ attribute")
+    
+    visualizer = Visualizer()
+    return visualizer.plot_pca_scree(
+        explained_variance_ratio=pca_transformer.explained_variance_ratio_,
+        n_components_selected=getattr(pca_transformer, 'n_components', None),
+        title=title
+    )
+
+
+def plot_pca_2d_scatter(X_pca: np.ndarray, y_labels: np.ndarray = None, title: str = 'PCA 2D Projection', explained_variance_ratio: np.ndarray = None) -> go.Figure:
+    """
+    Create 2D scatter plot from PCA-transformed data.
+    
+    Args:
+        X_pca: PCA-transformed data (n_samples, n_components)
+        y_labels: Optional labels for coloring
+        title: Plot title
+        explained_variance_ratio: Optional explained variance ratios for axis labels
+        
+    Returns:
+        Plotly figure with 2D scatter plot
+    """
+    visualizer = Visualizer()
+    return visualizer.plot_pca_2d_scatter(X_pca, y_labels, explained_variance_ratio, title)

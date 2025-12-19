@@ -15,7 +15,7 @@ setup(
     description="Professional AutoML platform with meta-learning and explainability",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/AutoML-Insight",
+    url="https://github.com/ah4y/AutoML-Insight",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 4 - Beta",

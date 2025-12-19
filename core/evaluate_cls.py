@@ -248,28 +248,27 @@ class ClassificationEvaluator:
         # AUTO-SELECT CV STRATEGY based on dataset size
         n_train = len(X_train)
         
-        # AGGRESSIVE optimization for large datasets
-        if n_train < 100:
+        # Use user-configured CV strategy (passed in constructor) unless overridden by extreme data conditions
+        user_n_folds = self.n_folds  # User's preference from constructor
+        
+        # AGGRESSIVE optimization for large datasets - only override user preference when absolutely necessary
+        if n_train < 50:  # Extremely small datasets
             n_folds = 2
             cv_sample_size = n_train
-            cv_strategy = "Minimal CV (2-fold)"
-        elif n_train < 500:
-            n_folds = 3
+            cv_strategy = f"Minimal CV (2-fold) - dataset too small for {user_n_folds}-fold"
+        elif n_train < 100 and user_n_folds > 5:  # Small datasets with high fold request
+            n_folds = min(5, user_n_folds)
             cv_sample_size = n_train
-            cv_strategy = "Standard CV (3-fold)"
-        elif n_train < 2000:
-            n_folds = 3
+            cv_strategy = f"Limited CV ({n_folds}-fold) - dataset size constrained"
+        elif n_train < 10000:  # Normal datasets - use user preference
+            n_folds = user_n_folds
             cv_sample_size = n_train
-            cv_strategy = "Full CV (3-fold)"
-        elif n_train < 10000:
-            n_folds = 2
-            cv_sample_size = min(5000, n_train)
-            cv_strategy = f"Fast CV (2-fold on {cv_sample_size:,} samples)"
+            cv_strategy = f"Standard CV ({n_folds}-fold)"
         else:
-            # Very large datasets: Use small sample for CV
-            n_folds = 2
-            cv_sample_size = min(3000, n_train)  # Max 3K for CV
-            cv_strategy = f"Quick CV (2-fold on {cv_sample_size:,} samples)"
+            # Large datasets: Use user preference but with sampling for efficiency
+            n_folds = user_n_folds
+            cv_sample_size = min(5000, n_train)  # Sample for efficiency but keep user's fold count
+            cv_strategy = f"Efficient CV ({n_folds}-fold on {cv_sample_size:,} samples)"
         
         # SMART SAMPLING: Use subset for CV if needed
         X_cv, y_cv = X_train, y_train

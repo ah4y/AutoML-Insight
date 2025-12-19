@@ -3,7 +3,8 @@
 import numpy as np
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.preprocessing import StandardScaler
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
+from .dimred import DimRedConfig, should_enable_dimred, select_dimred_method
 
 
 class MetaModelSelector:
@@ -236,4 +237,162 @@ class MetaModelSelector:
                 }
                 for model, results in leaderboard[1:4]
             ]
+        }
+
+    def recommend_dimred_config(
+        self,
+        meta_features: Dict[str, Any],
+        dimred_evaluation_results: Optional[Dict[str, Any]] = None
+    ) -> DimRedConfig:
+        """
+        Recommend dimensionality reduction configuration based on dataset characteristics.
+        
+        Args:
+            meta_features: Dataset meta-features
+            dimred_evaluation_results: Optional results from DimRedEvaluator
+            
+        Returns:
+            Recommended DimRedConfig
+        """
+        n_samples = meta_features.get('n_samples', 1000)
+        n_features = meta_features.get('n_features', 10)
+        sparsity = meta_features.get('sparsity', 0.0)
+        
+        # Use evaluation results if available
+        if dimred_evaluation_results and dimred_evaluation_results.get('recommended_config'):
+            return dimred_evaluation_results['recommended_config']
+        
+        # Use heuristic rules for dimred recommendation
+        enable = "auto"
+        method = "auto"
+        
+        # Rule-based dimred enablement
+        is_sparse = sparsity > 0.1  # Assume sparse if >10% zeros
+        if should_enable_dimred(n_features, n_samples, is_sparse, "auto"):
+            enable = "on"
+            method = select_dimred_method(n_samples, n_features, is_sparse)
+        else:
+            enable = "off"
+        
+        # Set variance target based on feature count
+        if n_features > 1000:
+            variance_target = 0.90  # More aggressive reduction for very high-dim
+        elif n_features > 100:
+            variance_target = 0.95  # Standard reduction
+        else:
+            variance_target = 0.99  # Conservative for low-dim
+        
+        # Set k_max based on dataset size
+        if n_samples > 10000:
+            k_max = 512  # Can handle more components
+        elif n_samples > 1000:
+            k_max = 256  # Standard
+        else:
+            k_max = min(128, n_features // 2)  # Conservative for small data
+        
+        # Create config dict
+        config_dict = {
+            'dimred': {
+                'enable': enable,
+                'method': method,
+                'variance_target': variance_target,
+                'k_max': k_max,
+                'whiten': True,
+                'seed': 42
+            }
+        }
+        
+        return DimRedConfig(config_dict)
+    
+    def get_dimred_recommendation_rationale(
+        self,
+        meta_features: Dict[str, Any],
+        dimred_config: DimRedConfig,
+        dimred_evaluation_results: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Get detailed rationale for dimensionality reduction recommendation.
+        
+        Args:
+            meta_features: Dataset meta-features
+            dimred_config: Recommended DimRedConfig
+            dimred_evaluation_results: Optional evaluation results
+            
+        Returns:
+            Dictionary with recommendation rationale
+        """
+        n_samples = meta_features.get('n_samples', 1000)
+        n_features = meta_features.get('n_features', 10)
+        sparsity = meta_features.get('sparsity', 0.0)
+        
+        rationale = []
+        impact_score = 0.0
+        
+        # Dataset characteristics analysis
+        dimensionality_ratio = n_features / n_samples if n_samples > 0 else 0
+        
+        if dimred_config.enable == "off":
+            rationale.append(f"Dataset has {n_features} features for {n_samples} samples (ratio: {dimensionality_ratio:.3f})")
+            rationale.append("Low-dimensional data unlikely to benefit from dimensionality reduction")
+            impact_score = 0.1
+        else:
+            # Enabled - explain why
+            if n_features > 1000:
+                rationale.append(f"High-dimensional dataset ({n_features} features) - dimensionality reduction recommended")
+                impact_score = 0.8
+            elif dimensionality_ratio > 0.5:
+                rationale.append(f"Feature-rich dataset (ratio: {dimensionality_ratio:.3f}) - may benefit from dimensionality reduction")
+                impact_score = 0.6
+            
+            # Method rationale
+            if dimred_config.method == "tsvd":
+                rationale.append(f"TruncatedSVD recommended due to sparse data (sparsity: {sparsity:.1%})")
+            elif dimred_config.method == "ipca":
+                rationale.append(f"IncrementalPCA recommended for large dataset ({n_samples} samples)")
+            elif dimred_config.method == "pca":
+                rationale.append("Standard PCA suitable for dense, moderate-sized dataset")
+            
+            # Variance target rationale
+            if dimred_config.variance_target < 0.95:
+                rationale.append(f"Aggressive dimensionality reduction (target: {dimred_config.variance_target:.0%}) for high-dimensional data")
+            else:
+                rationale.append(f"Conservative reduction (target: {dimred_config.variance_target:.0%}) to preserve information")
+        
+        # Add evaluation-based rationale if available
+        if dimred_evaluation_results:
+            comparison_metrics = dimred_evaluation_results.get('comparison_metrics', {})
+            
+            if 'baseline_score' in comparison_metrics and 'dimred_score' in comparison_metrics:
+                baseline = comparison_metrics['baseline_score']
+                dimred_score = comparison_metrics['dimred_score']
+                improvement = dimred_score - baseline
+                
+                if improvement > 0.01:
+                    rationale.append(f"Evaluation shows {improvement:.3f} improvement in performance")
+                    impact_score = min(1.0, impact_score + abs(improvement) * 10)
+                elif improvement < -0.01:
+                    rationale.append(f"Evaluation shows {abs(improvement):.3f} decrease in performance")
+                    impact_score = max(0.0, impact_score - abs(improvement) * 10)
+                else:
+                    rationale.append("Evaluation shows minimal impact on performance")
+            
+            # Statistical significance
+            p_value = dimred_evaluation_results.get('p_value', 1.0)
+            if p_value < 0.05:
+                rationale.append(f"Statistically significant improvement (p={p_value:.3f})")
+            elif p_value < 0.10:
+                rationale.append(f"Marginally significant improvement (p={p_value:.3f})")
+            else:
+                rationale.append("No statistically significant improvement")
+        
+        return {
+            'config': dimred_config,
+            'impact_score': impact_score,  # 0.0 to 1.0 scale
+            'rationale': rationale,
+            'dataset_characteristics': {
+                'n_samples': n_samples,
+                'n_features': n_features,
+                'dimensionality_ratio': dimensionality_ratio,
+                'sparsity': sparsity
+            }
         }
