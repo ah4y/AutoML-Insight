@@ -17,9 +17,10 @@ import yaml
 from core.dimred import DimRedConfig, DimRedSelector
 from core.preprocess import DataPreprocessor
 from core.dimred_evaluator import DimRedEvaluator
-from core.evaluation import ClassificationEvaluator, ClusteringEvaluator
-from models.supervised_models import get_supervised_models
-from models.unsupervised_models import get_clustering_models
+from core.evaluate_cls import ClassificationEvaluator
+from core.evaluate_clu import ClusteringEvaluator
+from core.models_supervised import get_supervised_models
+from core.models_clustering import get_clustering_models
 
 
 class TestEndToEndClassificationPipeline:
