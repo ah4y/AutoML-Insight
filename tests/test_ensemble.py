@@ -195,7 +195,7 @@ class TestStackingEnsembleInit:
             LogisticRegression(random_state=42),
             SVC(kernel='rbf', probability=True, random_state=42)
         ]
-        meta_model = RandomForestClassifier(n_estimators=50, random_state=42)
+        meta_model = LogisticRegression(random_state=42, max_iter=1000)
         
         ensemble = StackingEnsemble(
             base_models=base_models,
