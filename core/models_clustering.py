@@ -182,9 +182,13 @@ class AutoDBSCAN:
         self.min_samples = min_samples
         self.eps = None
         self.model = None
+        self.X_train = None
     
     def fit(self, X):
         """Fit DBSCAN with automatic epsilon selection."""
+        # Store training data for predict method
+        self.X_train = X.copy() if hasattr(X, 'copy') else np.array(X)
+        
         # Estimate eps using k-nearest neighbors
         neighbors = NearestNeighbors(n_neighbors=self.min_samples)
         neighbors.fit(X)
@@ -204,6 +208,32 @@ class AutoDBSCAN:
         """Fit and predict."""
         self.fit(X)
         return self.model.labels_
+    
+    def predict(self, X):
+        """Predict cluster labels for new data using DBSCAN logic.
+        
+        Uses a nearest-neighbor approach: assigns to the cluster of the
+        nearest training point if within eps distance, otherwise marks as noise (-1).
+        """
+        if self.model is None or self.X_train is None:
+            raise ValueError("Model must be fitted before calling predict()")
+        
+        from sklearn.metrics.pairwise import pairwise_distances
+        
+        # Compute distances from X to all training points
+        distances = pairwise_distances(X, self.X_train)
+        
+        # For each test point, find the nearest training point
+        nearest_indices = np.argmin(distances, axis=1)
+        nearest_distances = distances[np.arange(len(X)), nearest_indices]
+        
+        # Get the labels of nearest training points
+        labels = self.model.labels_[nearest_indices].copy()
+        
+        # Mark as noise if the nearest point is further than eps
+        labels[nearest_distances > self.eps] = -1
+        
+        return labels
     
     def get_params(self, deep=True):
         """Get parameters for this estimator (sklearn compatibility)."""
