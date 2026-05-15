@@ -41,10 +41,14 @@ def test_preprocessor_categorical():
     })
     y = pd.Series([0, 1, 0, 1, 0])
     
-    preprocessor = DataPreprocessor()
+    # Disable dimred to see pure one-hot encoding effect
+    from core.dimred import DimRedConfig
+    dimred_config = DimRedConfig(enable='off')
+    preprocessor = DataPreprocessor(dimred_config=dimred_config)
     X_transformed, y_transformed = preprocessor.fit_transform(X, y)
     
-    # One-hot encoding should increase dimensions
+    # One-hot encoding should increase dimensions from 3 to at least 4
+    # (2 numeric + 1 one-hot encoded categorical with 3 categories becomes 2 + 3 = 5)
     assert X_transformed.shape[1] > X.shape[1]
 
 
