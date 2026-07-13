@@ -6,6 +6,9 @@ from sklearn.mixture import GaussianMixture
 from sklearn.metrics import silhouette_score
 from sklearn.neighbors import NearestNeighbors
 from typing import Dict, Any, Tuple
+from utils.logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 
 class AutoKMeans:
@@ -133,8 +136,9 @@ class AutoGMM:
                 if bic < best_bic:
                     best_bic = bic
                     self.best_k = k
-            except:
+            except (ValueError, RuntimeError, np.linalg.LinAlgError) as e:
                 # Handle convergence failures
+                logger.warning(f"GMM fitting failed for k={k}: {e}")
                 self.bic_scores.append(float('inf'))
                 self.aic_scores.append(float('inf'))
         

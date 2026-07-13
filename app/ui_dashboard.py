@@ -28,10 +28,27 @@ from core.ai_insights_enhanced import get_enhanced_ai_engine, EnhancedDatasetSta
 from core.dimred import DimRedConfig, load_dimred_config  # NEW: Dimensionality reduction
 from core.dimred_evaluator import DimRedEvaluator  # NEW: Enhanced evaluation with dimred
 from core.advanced_optimization import AdvancedHyperparameterOptimizer, AutoMLPipeline  # NEW: Professional optimization
+from core.background_analyzer import get_background_result_safe  # NEW: Background analysis
+from core.statistical_tests import StatisticalModelComparator  # NEW: Statistical tests
+from utils.visualization_helpers import (  # NEW: Advanced visualizations
+    plot_learning_curve, plot_calibration_curve, plot_confidence_histogram,
+    plot_bias_variance_comparison, plot_pairwise_pvalues_heatmap,
+    plot_cv_stability_boxplot
+)
 from utils.seed_utils import set_seed
 from utils.logging_utils import setup_logger
+from utils.cache_utils import (  # NEW: Caching utilities
+    hash_dataframe, hash_params, cached_data_profile, cached_preprocess,
+    cached_get_models, CachedDataLoader, clear_cache
+)
 from sklearn.datasets import load_iris, load_wine
 from utils.jupyter_client import JupyterServerClient, ColabServerSetup, RemoteExecutor
+
+# NEW: Modular tab imports
+from app.tabs import (
+    DataOverviewTab, ModelsTab, ProfessionalAutoMLTab,
+    PCAAnalysisTab, ExplainabilityTab, RecommendationTab, ReportTab
+)
 
 # Initialize logger
 logger = setup_logger()
@@ -264,7 +281,7 @@ class AutoMLDashboard:
                 - 🔢 284,807 samples with class imbalance
                 """)
                 
-                if st.button("🚀 **Load Demo Dataset**", type="primary", use_container_width=True):
+                if st.button("🚀 **Load Demo Dataset**", type="primary", width='stretch'):
                     with st.spinner("📥 Loading demo dataset..."):
                         self.load_demo_data()
                         st.success("✅ Demo dataset loaded successfully!")
@@ -387,7 +404,7 @@ class AutoMLDashboard:
         
         with tab1:
             st.subheader("📋 Dataset Preview")
-            st.dataframe(data.head(10), use_container_width=True, height=300)
+            st.dataframe(data.head(10), width='stretch', height=300)
             
             st.subheader("📊 Column Information Summary")
             
@@ -421,7 +438,7 @@ class AutoMLDashboard:
             info_df = pd.DataFrame(info_data)
             st.dataframe(
                 info_df, 
-                use_container_width=True,
+                width='stretch',
                 height=min(400, len(info_df) * 35 + 50)  # Dynamic height based on rows
             )
         
@@ -441,7 +458,7 @@ class AutoMLDashboard:
                                 import plotly.express as px
                                 fig = px.histogram(data, x=col_name, title=f"Distribution of {col_name}")
                                 fig.update_layout(height=300)
-                                st.plotly_chart(fig, use_container_width=True)
+                                st.plotly_chart(fig, width='stretch')
                             except:
                                 st.write(f"**{col_name}** - Basic Statistics:")
                                 st.write(data[col_name].describe())
@@ -458,7 +475,7 @@ class AutoMLDashboard:
                         fig = px.bar(x=value_counts.index, y=value_counts.values, 
                                    title=f"Top Values in {col_name}")
                         fig.update_layout(height=300)
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, width='stretch')
                     except:
                         st.write(f"**{col_name}** - Top 10 Values:")
                         st.write(value_counts)
@@ -476,7 +493,7 @@ class AutoMLDashboard:
                                   aspect="auto",
                                   color_continuous_scale="RdBu_r")
                     fig.update_layout(height=500)
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
                     
                     # Show strongest correlations
                     st.markdown("**Strongest Correlations:**")
@@ -492,13 +509,13 @@ class AutoMLDashboard:
                                 })
                     
                     if corr_pairs:
-                        st.dataframe(pd.DataFrame(corr_pairs), use_container_width=True)
+                        st.dataframe(pd.DataFrame(corr_pairs), width='stretch')
                     else:
                         st.info("No strong correlations (>0.5) found between features.")
                         
                 except Exception as e:
                     st.write("Correlation matrix:")
-                    st.dataframe(numeric_data.corr(), use_container_width=True)
+                    st.dataframe(numeric_data.corr(), width='stretch')
             else:
                 st.info("Need at least 2 numeric columns for correlation analysis.")
         
@@ -522,9 +539,9 @@ class AutoMLDashboard:
                                x='Column', y='Missing Percentage',
                                title="Missing Data by Column")
                     fig.update_layout(height=400, xaxis_tickangle=45)
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
                 except:
-                    st.dataframe(missing_df[missing_df['Missing Count'] > 0], use_container_width=True)
+                    st.dataframe(missing_df[missing_df['Missing Count'] > 0], width='stretch')
             else:
                 st.success("✅ No missing data detected!")
             
@@ -569,7 +586,7 @@ class AutoMLDashboard:
         
         with col1:
             ai_button_text = "🔄 Re-analyze with AI" if st.session_state.get('ai_analysis') else "🔍 Analyze Dataset with AI"
-            if st.button(ai_button_text, type="secondary", use_container_width=True, help="Get AI-powered insights about your dataset"):
+            if st.button(ai_button_text, type="secondary", width='stretch', help="Get AI-powered insights about your dataset"):
                 with st.spinner("🤖 AI is analyzing your dataset..."):
                     try:
                         analysis = self._generate_ai_dataset_analysis(data)
@@ -580,7 +597,7 @@ class AutoMLDashboard:
         
         with col2:
             fe_button_text = "🔄 Modify Features" if st.session_state.get('feature_engineering_applied') else "🛠️ Feature Engineering"
-            if st.button(fe_button_text, type="secondary", use_container_width=True, help="Edit and transform your dataset"):
+            if st.button(fe_button_text, type="secondary", width='stretch', help="Edit and transform your dataset"):
                 st.session_state.show_feature_engineering = True
                 st.rerun()
         
@@ -598,21 +615,82 @@ class AutoMLDashboard:
             
             with st.expander("🎯 **AI Insights & Recommendations**", expanded=True):
                 if isinstance(analysis, dict):
-                    # Handle structured analysis
                     # Task type recommendation
                     if 'task_recommendation' in analysis:
                         task_rec = analysis['task_recommendation']
                         st.success(f"**Recommended Task:** {task_rec['task']} ({task_rec['confidence']:.0%} confidence)")
                         st.info(f"**Reasoning:** {task_rec['reasoning']}")
                     
-                    # Target column suggestions
-                    if 'target_suggestions' in analysis:
-                        st.markdown("**🎯 Potential Target Columns:**")
-                        for suggestion in analysis['target_suggestions'][:3]:
-                            st.write(f"• `{suggestion['column']}` - {suggestion['reasoning']}")
+                    # Dataset Overview
+                    if 'dataset_overview' in analysis:
+                        st.markdown("---")
+                        st.markdown("### 📊 **Dataset Overview**")
+                        overview = analysis['dataset_overview']
+                        
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric("📝 Samples", f"{overview.get('samples', 0):,}")
+                            st.metric("📊 Features", f"{overview.get('features', 0)}")
+                        with col2:
+                            st.metric("🔢 Numeric", f"{overview.get('numeric_features', 0)}")
+                            st.metric("📝 Categorical", f"{overview.get('categorical_features', 0)}")
+                        with col3:
+                            st.metric("❓ Missing", overview.get('missing_percentage', 0))
+                            st.metric("📋 Duplicates", overview.get('duplicate_rows', 0))
+                        with col4:
+                            st.metric("💾 Memory", f"{overview.get('memory_mb', 0)} MB")
+                            st.metric("📅 DateTime", f"{overview.get('datetime_features', 0)}")
                     
-                    # Enhanced AI insights display
-                    if isinstance(analysis, dict) and any(key.startswith(('dataset_', 'key_', 'critical_')) for key in analysis.keys()):
+                    # Data Quality
+                    if 'data_quality' in analysis:
+                        st.markdown("---")
+                        st.markdown("### 🔍 **Data Quality Assessment**")
+                        quality = analysis['data_quality']
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.write(f"**Missing Data:** {quality.get('missing_data', 'None')}")
+                            st.write(f"**Duplicates:** {quality.get('duplicates', 'None')}")
+                        with col2:
+                            correlations = quality.get('high_correlations', 'None')
+                            if isinstance(correlations, list) and correlations:
+                                st.write("**High Correlations:**")
+                                for corr in correlations[:3]:
+                                    st.write(f"  • {corr}")
+                            else:
+                                st.write(f"**High Correlations:** {correlations}")
+                    
+                    # Target column suggestions
+                    if 'target_suggestions' in analysis and analysis['target_suggestions']:
+                        st.markdown("---")
+                        st.markdown("### 🎯 **Potential Target Columns**")
+                        for i, suggestion in enumerate(analysis['target_suggestions'][:5], 1):
+                            st.write(f"**{i}. `{suggestion['column']}`**")
+                            st.write(f"   {suggestion['reasoning']}")
+                            st.write("")
+                    
+                    # Quality Issues
+                    if 'quality_issues' in analysis and analysis['quality_issues']:
+                        st.markdown("---")
+                        st.markdown("### ⚠️ **Quality Issues Detected**")
+                        for issue in analysis['quality_issues']:
+                            if '⚠️' in issue or 'ℹ️' in issue:
+                                st.warning(issue)
+                            else:
+                                st.info(issue)
+                    
+                    # Recommendations
+                    if 'recommendations' in analysis and analysis['recommendations']:
+                        st.markdown("---")
+                        st.markdown("### 💡 **Recommendations**")
+                        for rec in analysis['recommendations']:
+                            if '✅' in rec:
+                                st.success(rec)
+                            else:
+                                st.info(f"💡 {rec}")
+                    
+                    # Enhanced AI insights display (for enhanced analysis)
+                    if isinstance(analysis, dict) and any(key.startswith(('key_', 'critical_')) for key in analysis.keys()):
                         self._display_enhanced_ai_insights(analysis)
                 
                 elif isinstance(analysis, str):
@@ -642,7 +720,7 @@ class AutoMLDashboard:
         col1, col2, col3 = st.columns([1, 2, 1])
         
         with col2:
-            if st.button("➡️ Continue to Configuration", type="primary", use_container_width=True):
+            if st.button("➡️ Continue to Configuration", type="primary", width='stretch'):
                 st.session_state.app_stage = 'configure'
                 st.rerun()
     
@@ -669,67 +747,208 @@ class AutoMLDashboard:
             return self._generate_basic_dataset_analysis(data)
     
     def _generate_basic_dataset_analysis(self, data):
-        """Generate basic dataset analysis as fallback."""
+        """Generate comprehensive intelligent dataset analysis based on actual data characteristics."""
         try:
-            # Basic dataset characteristics
+            # Deep dataset analysis
             n_rows, n_cols = data.shape
             numeric_cols = data.select_dtypes(include=[np.number]).columns.tolist()
             categorical_cols = data.select_dtypes(include=['object', 'category']).columns.tolist()
+            datetime_cols = data.select_dtypes(include=['datetime64']).columns.tolist()
             missing_data = data.isnull().sum().sum()
             
-            # Simple heuristics for task recommendation
-            analysis = {
-                'task_recommendation': {
-                    'task': 'Classification',
-                    'confidence': 0.8,
-                    'reasoning': 'Dataset appears suitable for classification based on column types and structure'
-                },
-                'target_suggestions': [],
-                'quality_issues': []
+            # Calculate detailed statistics
+            missing_pct = (missing_data / (n_rows * n_cols)) * 100 if n_rows * n_cols > 0 else 0
+            duplicate_rows = data.duplicated().sum()
+            
+            # Analyze correlations for numeric data
+            correlations = []
+            if len(numeric_cols) > 1:
+                corr_matrix = data[numeric_cols].corr().abs()
+                for i in range(len(numeric_cols)):
+                    for j in range(i+1, len(numeric_cols)):
+                        corr_val = corr_matrix.iloc[i, j]
+                        if corr_val > 0.7:
+                            correlations.append(f"{numeric_cols[i]} ↔ {numeric_cols[j]} ({corr_val:.2f})")
+            
+            # Intelligent task recommendation
+            task_type = 'Classification'
+            confidence = 0.5
+            reasoning = ''
+            
+            classification_score = 0
+            regression_score = 0
+            clustering_score = 0
+            
+            # Detailed column analysis
+            target_candidates = []
+            for col in data.columns:
+                unique_count = data[col].nunique()
+                unique_ratio = unique_count / len(data)
+                
+                # Classification indicators
+                if data[col].dtype == 'object' or data[col].dtype.name == 'category':
+                    if 2 <= unique_count <= 50 and unique_ratio < 0.5:
+                        classification_score += 3
+                        if unique_count <= 20:
+                            target_candidates.append({
+                                'column': col,
+                                'type': 'classification',
+                                'unique_values': unique_count,
+                                'reasoning': f'Categorical with {unique_count} classes ({unique_ratio:.1%} unique) - ideal for classification',
+                                'score': 10 - unique_count  # Prefer fewer classes
+                            })
+                elif data[col].dtype in ['int64', 'int32']:
+                    if 2 <= unique_count <= 20:
+                        classification_score += 2
+                        target_candidates.append({
+                            'column': col,
+                            'type': 'classification',
+                            'unique_values': unique_count,
+                            'reasoning': f'Integer with {unique_count} discrete values - suitable for classification',
+                            'score': 8 - unique_count
+                        })
+                    elif unique_count > 50 and unique_ratio > 0.5:
+                        regression_score += 1
+                        target_candidates.append({
+                            'column': col,
+                            'type': 'regression',
+                            'unique_values': unique_count,
+                            'reasoning': f'Integer with {unique_count} values ({unique_ratio:.1%} unique) - suitable for regression',
+                            'score': min(10, int(unique_ratio * 10))
+                        })
+                
+                # Regression indicators
+                if data[col].dtype in ['float64', 'float32']:
+                    if unique_ratio > 0.8:
+                        regression_score += 2
+                        target_candidates.append({
+                            'column': col,
+                            'type': 'regression',
+                            'unique_values': unique_count,
+                            'reasoning': f'Continuous numeric ({unique_ratio:.1%} unique values) - ideal for regression',
+                            'score': int(unique_ratio * 10)
+                        })
+            
+            # Clustering indicators
+            if len(categorical_cols) == 0 and len(numeric_cols) >= 3:
+                clustering_score += 2
+            if n_cols >= 5 and all(data[col].dtype in ['float64', 'int64', 'int32', 'float32'] for col in data.columns):
+                clustering_score += 1
+            
+            # Determine task type
+            scores = {
+                'Classification': classification_score,
+                'Regression': regression_score,
+                'Clustering': clustering_score
             }
             
-            # Suggest potential target columns
-            for col in data.columns:
-                if data[col].dtype == 'object':
-                    unique_ratio = data[col].nunique() / len(data)
-                    if 0.02 <= unique_ratio <= 0.3:  # Good target candidate ratio
-                        analysis['target_suggestions'].append({
-                            'column': col,
-                            'reasoning': f'Categorical column with {data[col].nunique()} unique values - good for classification'
-                        })
-                elif data[col].dtype in ['int64', 'float64']:
-                    if data[col].nunique() < 20:  # Discrete numeric - classification
-                        analysis['target_suggestions'].append({
-                            'column': col,
-                            'reasoning': f'Numeric column with {data[col].nunique()} unique values - could be classification target'
-                        })
-                    else:  # Continuous - regression
-                        analysis['target_suggestions'].append({
-                            'column': col,
-                            'reasoning': f'Continuous numeric column - suitable for regression target'
-                        })
+            max_score = max(scores.values())
+            if max_score > 0:
+                task_type = max(scores, key=scores.get)
+                total_score = sum(scores.values())
+                confidence = min(0.95, 0.5 + (max_score / max(1, total_score)) * 0.45)
             
-            # Check for quality issues
-            if missing_data > 0:
-                missing_pct = (missing_data / (n_rows * n_cols)) * 100
-                if missing_pct > 10:
-                    analysis['quality_issues'].append(f'Dataset has {missing_pct:.1f}% missing data - consider imputation')
+            # Generate detailed reasoning
+            if task_type == 'Classification':
+                cat_count = len(categorical_cols)
+                discrete_count = len([col for col in data.columns if data[col].nunique() <= 20])
+                reasoning = f'Dataset has {cat_count} categorical columns and {discrete_count} columns with discrete values, indicating classification task'
+            elif task_type == 'Regression':
+                cont_count = len([col for col in data.columns if data[col].dtype in ['float64', 'float32']])
+                high_card = len([col for col in numeric_cols if data[col].nunique() > 50])
+                reasoning = f'Dataset has {cont_count} continuous numeric columns and {high_card} high-cardinality features, suggesting regression task'
+            else:
+                reasoning = f'Dataset has {len(numeric_cols)} numeric features with no clear target column, suitable for clustering analysis'
             
-            # Check for high cardinality
+            # Sort and select top target candidates
+            target_candidates.sort(key=lambda x: x['score'], reverse=True)
+            top_targets = target_candidates[:5]  # Top 5 candidates
+            
+            # Build comprehensive analysis
+            analysis = {
+                'task_recommendation': {
+                    'task': task_type,
+                    'confidence': confidence,
+                    'reasoning': reasoning
+                },
+                'target_suggestions': [
+                    {
+                        'column': t['column'],
+                        'reasoning': t['reasoning']
+                    } for t in top_targets
+                ],
+                'dataset_overview': {
+                    'samples': n_rows,
+                    'features': n_cols,
+                    'numeric_features': len(numeric_cols),
+                    'categorical_features': len(categorical_cols),
+                    'datetime_features': len(datetime_cols),
+                    'missing_percentage': round(missing_pct, 2),
+                    'duplicate_rows': duplicate_rows,
+                    'memory_mb': round(data.memory_usage(deep=True).sum() / 1024**2, 2)
+                },
+                'data_quality': {
+                    'missing_data': f'{missing_pct:.1f}%' if missing_pct > 0 else 'None',
+                    'duplicates': f'{duplicate_rows} rows ({duplicate_rows/n_rows*100:.1f}%)' if duplicate_rows > 0 else 'None',
+                    'high_correlations': correlations[:5] if correlations else 'No strong correlations detected'
+                },
+                'quality_issues': [],
+                'recommendations': []
+            }
+            
+            # Detailed quality checks
+            if missing_pct > 10:
+                analysis['quality_issues'].append(f'⚠️ High missing data ({missing_pct:.1f}%) - imputation or removal needed')
+                analysis['recommendations'].append('Apply SimpleImputer or KNNImputer for missing values')
+            
+            if duplicate_rows > n_rows * 0.05:
+                analysis['quality_issues'].append(f'⚠️ {duplicate_rows} duplicate rows detected ({duplicate_rows/n_rows*100:.1f}%)')
+                analysis['recommendations'].append('Remove duplicate rows before training')
+            
+            # Check for high cardinality categorical
             for col in categorical_cols:
-                if data[col].nunique() > n_rows * 0.8:
-                    analysis['quality_issues'].append(f'Column {col} has very high cardinality - consider encoding strategies')
+                if data[col].nunique() > 50:
+                    analysis['quality_issues'].append(f'⚠️ Column "{col}" has {data[col].nunique()} categories - high cardinality')
+                    analysis['recommendations'].append(f'Consider target encoding or grouping rare categories for "{col}"')
             
-            # Check for single-value columns
-            for col in data.columns:
-                if data[col].nunique() == 1:
-                    analysis['quality_issues'].append(f'Column {col} has only one unique value - consider removing')
+            # Check for constant columns
+            constant_cols = [col for col in data.columns if data[col].nunique() == 1]
+            if constant_cols:
+                analysis['quality_issues'].append(f'⚠️ {len(constant_cols)} constant columns: {", ".join(constant_cols[:3])}')
+                analysis['recommendations'].append('Remove constant columns - they provide no information')
+            
+            # Check for skewed distributions
+            if len(numeric_cols) > 0:
+                from scipy import stats as scipy_stats
+                skewed_cols = []
+                for col in numeric_cols:
+                    skewness = scipy_stats.skew(data[col].dropna())
+                    if abs(skewness) > 1:
+                        skewed_cols.append(f'{col} (skew={skewness:.2f})')
+                
+                if skewed_cols:
+                    analysis['quality_issues'].append(f'ℹ️ Skewed distributions in: {", ".join(skewed_cols[:3])}')
+                    analysis['recommendations'].append('Consider log transformation or power transformation for skewed features')
+            
+            # Add positive insights
+            if missing_pct < 5:
+                analysis['recommendations'].append('✅ Low missing data - dataset is clean')
+            if len(correlations) == 0:
+                analysis['recommendations'].append('✅ No multicollinearity issues detected')
+            if n_rows > 1000:
+                analysis['recommendations'].append('✅ Good sample size for model training')
             
             return analysis
             
         except Exception as e:
-            logger.error(f"Basic dataset analysis failed: {e}")
-            return {'task_recommendation': {'task': 'Analysis', 'confidence': 0.5, 'reasoning': 'Basic analysis completed'}}
+            logger.error(f"Comprehensive dataset analysis failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return {
+                'task_recommendation': {'task': 'Analysis', 'confidence': 0.5, 'reasoning': 'Analysis completed with limited information'},
+                'target_suggestions': [],
+                'quality_issues': [f'Analysis error: {str(e)}']
+            }
     
     def _display_enhanced_ai_insights(self, insights):
         """Display enhanced AI insights in organized format."""
@@ -1048,14 +1267,14 @@ class AutoMLDashboard:
             # Run button - changes based on execution mode
             st.sidebar.markdown("---")
             if st.session_state.execution_mode == "local":
-                if st.sidebar.button("🚀 Run AutoML Locally", type="primary", use_container_width=True):
+                if st.sidebar.button("🚀 Run AutoML Locally", type="primary", width='stretch'):
                     set_seed(random_seed)
                     with st.spinner("Running AutoML pipeline..."):
                         self.run_automl()
                 
                 # Configuration link
                 st.sidebar.markdown("---")
-                if st.sidebar.button("⚙️ Advanced Configuration", use_container_width=True):
+                if st.sidebar.button("⚙️ Advanced Configuration", width='stretch'):
                     st.session_state.show_configuration = True
                     st.rerun()
             
@@ -1063,7 +1282,7 @@ class AutoMLDashboard:
                 if not st.session_state.jupyter_connected:
                     st.sidebar.warning("⚠️ Connect to Jupyter server first")
                 else:
-                    if st.sidebar.button("🚀 Run Full AutoML Pipeline", type="primary", use_container_width=True):
+                    if st.sidebar.button("🚀 Run Full AutoML Pipeline", type="primary", width='stretch'):
                         set_seed(random_seed)
                         with st.spinner("Running AutoML pipeline..."):
                             self.run_automl_remote()
@@ -1072,13 +1291,39 @@ class AutoMLDashboard:
                 if not st.session_state.jupyter_connected:
                     st.sidebar.info("💡 Set up Colab and connect first")
                 else:
-                    if st.sidebar.button("🚀 Run Full AutoML Pipeline", type="primary", use_container_width=True):
+                    if st.sidebar.button("🚀 Run Full AutoML Pipeline", type="primary", width='stretch'):
                         set_seed(random_seed)
                         with st.spinner("Running AutoML pipeline..."):
                             self.run_automl_remote()
+            
+            # Cache Management Section
+            st.sidebar.markdown("---")
+            with st.sidebar.expander("🗄️ Cache Management"):
+                st.markdown("""
+                **Caching Status:** ✅ Active
+                
+                Cache improves performance by storing:
+                - Data profiling results
+                - Preprocessing outputs
+                - Model initialization
+                - Demo datasets
+                """)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("🔄 Clear Data", help="Clear cached data processing"):
+                        clear_cache('data')
+                        st.success("✅ Data cache cleared")
+                        st.rerun()
+                
+                with col2:
+                    if st.button("🧹 Clear All", help="Clear all caches"):
+                        clear_cache('all')
+                        st.success("✅ All caches cleared")
+                        st.rerun()
     
     def load_demo_data(self):
-        """Load demo datasets."""
+        """Load demo datasets with caching."""
         st.sidebar.subheader("📊 Demo Datasets")
         demo_choice = st.sidebar.radio(
             "Select Demo Dataset",
@@ -1086,19 +1331,17 @@ class AutoMLDashboard:
         )
         
         if demo_choice == "Iris":
-            iris = load_iris()
-            data = pd.DataFrame(iris.data, columns=iris.feature_names)
-            data['target'] = iris.target
+            # Use cached loader
+            data, target_col = CachedDataLoader.load_demo_dataset('iris')
             st.session_state.data = data
-            st.session_state.target_col = 'target'
+            st.session_state.target_col = target_col
             st.session_state.task_type = 'Classification'  # Set default task type for demo
             st.sidebar.success("✅ Loaded Iris dataset (150 samples, 4 features)")
         else:
-            wine = load_wine()
-            data = pd.DataFrame(wine.data, columns=wine.feature_names)
-            data['target'] = wine.target
+            # Use cached loader
+            data, target_col = CachedDataLoader.load_demo_dataset('wine')
             st.session_state.data = data
-            st.session_state.target_col = 'target'
+            st.session_state.target_col = target_col
             st.session_state.task_type = 'Classification'  # Set default task type for demo
             st.sidebar.success("✅ Loaded Wine dataset (178 samples, 13 features)")
     
@@ -1137,11 +1380,11 @@ class AutoMLDashboard:
         col1, col2 = st.sidebar.columns(2)
         
         with col1:
-            if st.button("🔗 Connect", use_container_width=True, key="jupyter_connect_btn", disabled=st.session_state.jupyter_connected):
+            if st.button("🔗 Connect", width='stretch', key="jupyter_connect_btn", disabled=st.session_state.jupyter_connected):
                 self.connect_to_jupyter(server_url, token)
         
         with col2:
-            if st.button("❌ Disconnect", use_container_width=True, disabled=not st.session_state.jupyter_connected, key="jupyter_disconnect_btn"):
+            if st.button("❌ Disconnect", width='stretch', disabled=not st.session_state.jupyter_connected, key="jupyter_disconnect_btn"):
                 self.disconnect_jupyter()
     
     # Google Colab support removed for simplicity - focusing on Local + Remote Jupyter only
@@ -1367,7 +1610,7 @@ class AutoMLDashboard:
                     })
             
             if df_results:
-                st.dataframe(pd.DataFrame(df_results), use_container_width=True)
+                st.dataframe(pd.DataFrame(df_results), width='stretch')
                 
                 st.info(f"🎯 **Recommended Model:** {results_data.get('best_model', 'N/A')}")
             
@@ -1376,13 +1619,13 @@ class AutoMLDashboard:
     
     def run_automl(self):
         """Run the AutoML pipeline."""
-        st.info("🔍 DEBUG: run_automl() started")
+        logger.debug("run_automl() started")
         
         try:
             data = st.session_state.data
             task_type = st.session_state.task_type
             
-            st.info(f"🔍 DEBUG: Task type: {task_type}, Data shape: {data.shape}")
+            logger.debug(f"Task type: {task_type}, Data shape: {data.shape}")
             st.info(f"⚙️ Using your configured random seed: {st.session_state.random_seed}")
             st.info(f"⚙️ Dimensionality reduction: {st.session_state.get('dimred_enabled', 'auto')} mode")
             
@@ -1407,11 +1650,10 @@ class AutoMLDashboard:
             else:
                 st.info(f"⚙️ Using recommended max features: {max_features}")
             
-            # Profile data
+            # Profile data with caching
             st.info("📊 Profiling dataset...")
             profiler = DataProfiler()
             
-            st.info("🔍 DEBUG: DataProfiler created, starting classification check")
             
             if task_type == "Classification":
                 target_col = st.session_state.target_col
@@ -1422,7 +1664,6 @@ class AutoMLDashboard:
                 n_unique = y.nunique()
                 n_samples = len(y)
                 
-                st.info(f"🔍 DEBUG: Target check - Unique values: {n_unique}, Samples: {n_samples}, Ratio: {n_unique/n_samples:.3f}")
                 
                 # CRITICAL: Check if target looks like an ID column
                 if n_unique > 100 and n_unique > n_samples * 0.8:
@@ -1462,22 +1703,28 @@ class AutoMLDashboard:
                     # For 21-50 classes, show just the counts
                     st.info(f"📊 Classes: {n_unique} total (range: {min(class_counts_before.keys())} to {max(class_counts_before.keys())})")
                 
-                profile = profiler.profile_dataset(X, y)
+                # Use cached profiling
+                data_hash = hash_dataframe(data)
+                profile = cached_data_profile(profiler, data_hash, X, y)
             else:
                 X = data
                 y = None
-                profile = profiler.profile_dataset(X)
+                # Use cached profiling
+                data_hash = hash_dataframe(data)
+                profile = cached_data_profile(profiler, data_hash, X)
             
             st.session_state.profiler = profiler
             st.session_state.profile = profile
             
-            # Preprocess with smart feature selection and dimred
+            # Preprocess with smart feature selection and dimred (with caching)
             with st.spinner("🔧 Preprocessing data..."):
                 preprocessor = DataPreprocessor(
                     max_features=max_features,
                     dimred_config=dimred_config
                 )
-                X_processed, y_processed = preprocessor.fit_transform(X, y)
+                # Use cached preprocessing
+                data_hash = hash_dataframe(data)
+                X_processed, y_processed = cached_preprocess(preprocessor, data_hash, X, y)
             
             # Check class distribution AFTER preprocessing
             if task_type == "Classification":
@@ -1549,6 +1796,32 @@ This may cause slow training. Consider filtering to top frequent classes.
             st.session_state.preprocessor = preprocessor
             st.session_state.X_processed = X_processed
             st.session_state.y_processed = y_processed
+            
+            # CRITICAL: Validate processed data doesn't have NaN values
+            if isinstance(X_processed, pd.DataFrame):
+                nan_count = X_processed.isnull().sum().sum()
+            else:
+                nan_count = np.isnan(X_processed).sum()
+            
+            if nan_count > 0:
+                st.error(f"❌ Preprocessing failed: {nan_count} NaN values detected in processed data!")
+                st.error("This should not happen. The preprocessor should handle all missing values.")
+                st.info("💡 Applying emergency imputation...")
+                
+                # Emergency imputation
+                from sklearn.impute import SimpleImputer
+                imputer = SimpleImputer(strategy='median')
+                if isinstance(X_processed, pd.DataFrame):
+                    X_processed = pd.DataFrame(
+                        imputer.fit_transform(X_processed),
+                        columns=X_processed.columns,
+                        index=X_processed.index
+                    )
+                else:
+                    X_processed = imputer.fit_transform(X_processed)
+                
+                st.session_state.X_processed = X_processed
+                st.success("✅ Emergency imputation completed")
             
             # NEW: Create train/test split for proper evaluation
             from sklearn.model_selection import train_test_split
@@ -1671,14 +1944,14 @@ Auto-filtering classes with <{st.session_state.min_class_samples} samples to pre
             # Train models
             if task_type == "Classification":
                 st.info("🚀 Starting Classification...")
-                st.info("🔍 DEBUG: About to call run_classification()")
+                logger.debug("About to call run_classification()")
                 self.run_classification(X_train, y_train, X_test, y_test, dimred_config, preprocessor, X_raw_train, y_raw_train)
-                st.info("🔍 DEBUG: run_classification() completed")
+                logger.debug("run_classification() completed")
             else:
                 st.info("🚀 Starting Clustering...")
-                st.info("🔍 DEBUG: About to call run_clustering()")
+                logger.debug("About to call run_clustering()")
                 self.run_clustering(X_processed, preprocessor, dimred_config)
-                st.info("🔍 DEBUG: run_clustering() completed")
+                logger.debug("run_clustering() completed")
             
             st.success("✅ AutoML pipeline completed!")
             
@@ -1716,15 +1989,16 @@ Auto-filtering classes with <{st.session_state.min_class_samples} samples to pre
                 X = data.drop(columns=[target_col])
                 y = data[target_col]
                 
-                # Check for regression disguised as classification
+                # Check for potential regression disguised as classification
                 n_unique = y.nunique()
                 n_samples = len(y)
                 
                 if n_unique / n_samples > 0.5:
                     import pandas as pandas_api
                     if pandas_api.api.types.is_numeric_dtype(y):
-                        st.error("❌ **Wrong Task Type!** This appears to be regression, not classification.")
-                        return
+                        st.warning(f"⚠️ **Warning:** Target has {n_unique} unique values ({n_unique/n_samples:.1%} of samples). This looks like a continuous variable - consider using Regression instead of Classification for better results.")
+                elif n_unique > 100:
+                    st.warning(f"⚠️ **Warning:** Target has {n_unique} classes. Classification with many classes may be challenging and slow.")
                         
             elif task_type == "Regression":
                 ml_task = "regression"
@@ -1833,6 +2107,33 @@ Auto-filtering classes with <{st.session_state.min_class_samples} samples to pre
             st.session_state.professional_pipeline = professional_pipeline
             st.session_state.dataset_stats = dataset_stats
             st.session_state.optimization_time = time.time() - optimization_start_time
+            
+            # Store error logs for debugging
+            if hasattr(professional_pipeline, 'optimizer') and hasattr(professional_pipeline.optimizer, 'error_log'):
+                st.session_state.optimization_errors = professional_pipeline.optimizer.error_log
+            else:
+                st.session_state.optimization_errors = []
+            
+            # CRITICAL: Populate st.session_state.models for other tabs
+            # Extract trained models from professional results
+            if results and 'individual_models' in results:
+                trained_models = {}
+                for model_name, model_result in results['individual_models'].items():
+                    # The key is 'model' in the optimization results
+                    if 'model' in model_result:
+                        trained_models[model_name] = model_result['model']
+                
+                if trained_models:
+                    st.session_state.models = trained_models
+                    st.info(f"✅ Stored {len(trained_models)} trained models for analysis")
+                else:
+                    st.warning("⚠️ No trained models found in results")
+            
+            # Store processed data and preprocessor for explainability and recommendations
+            st.session_state.X_processed = X_processed
+            st.session_state.y_processed = y_processed
+            st.session_state.preprocessor = preprocessor
+            st.session_state.task_performed = ml_task
             
             # Final completion steps
             progress_bar.progress(1.0)
@@ -2022,6 +2323,37 @@ Auto-filtering classes with <{st.session_state.min_class_samples} samples to pre
         """Display professional AutoML results with advanced insights."""
         st.header("🏆 Professional AutoML Results")
         
+        # Check if all models failed
+        individual_results = results.get('individual_models', {})
+        if not individual_results:
+            st.error("❌ No models were successfully trained!")
+            st.warning("💡 Check the console/terminal for detailed error messages.")
+            return
+        
+        # Check if all models returned failure scores (-1000)
+        all_failed = all(result.get('best_score', 0) <= -1000 for result in individual_results.values())
+        if all_failed:
+            st.error("❌ All models failed during training!")
+            st.warning("⚠️ All models returned failure scores (-1000). This typically indicates:")
+            st.write("1. **Data issues**: NaN values, infinite values, or invalid data")
+            st.write("2. **Target variable issues**: Incorrect target column or data type mismatch")
+            st.write("3. **Insufficient data**: Not enough samples for cross-validation")
+            st.info("💡 **Solution**: Check the console/terminal for detailed error logs showing the exact failure reason.")
+            
+            # Show debug info
+            with st.expander("🔍 Debug Information"):
+                st.write("**Dataset Info:**")
+                st.json(results.get('dataset_info', {}))
+                st.write("**Model Results:**")
+                for model_name, result in individual_results.items():
+                    st.write(f"- {model_name}: Score = {result.get('best_score', 'N/A')}")
+                
+                # Show captured error logs
+                if st.session_state.get('optimization_errors'):
+                    st.write("**Error Logs:**")
+                    st.code("\n".join(st.session_state.optimization_errors[-10:]), language="text")  # Last 10 errors
+            return
+        
         # Overview metrics
         col1, col2, col3, col4 = st.columns(4)
         
@@ -2070,7 +2402,7 @@ Auto-filtering classes with <{st.session_state.min_class_samples} samples to pre
                 {'Parameter': param, 'Value': str(value)} 
                 for param, value in best_result['best_params'].items()
             ])
-            st.dataframe(best_params_df, use_container_width=True)
+            st.dataframe(best_params_df, width='stretch')
         
         # Model Comparison Table
         st.subheader("📊 Model Performance Comparison")
@@ -2088,7 +2420,7 @@ Auto-filtering classes with <{st.session_state.min_class_samples} samples to pre
             })
         
         comparison_df = pd.DataFrame(comparison_data)
-        st.dataframe(comparison_df, use_container_width=True)
+        st.dataframe(comparison_df, width='stretch')
         
         # Ensemble Results
         if results['ensemble_models']:
@@ -2223,31 +2555,26 @@ Auto-filtering classes with <{st.session_state.min_class_samples} samples to pre
         """Run classification pipeline with proper train/test split."""
         st.info("🤖 Training classification models on training set...")
         
-        # DEBUG: Track method entry
-        st.info("🔍 DEBUG: run_classification() started")
         
-        # SMART MODEL SELECTION: Use fast models for large datasets
+        # SMART MODEL SELECTION: Use fast models for large datasets (with caching)
         total_samples = len(y_train)
         
-        # Get models with adaptive settings based on dataset size
-        models = get_supervised_models(
-            random_state=st.session_state.random_seed,  # Use user preference
-            n_samples=len(X_train)  # Pass dataset size for optimization
+        # Get models with adaptive settings based on dataset size (cached)
+        models = cached_get_models(
+            task_type='classification',
+            random_seed=st.session_state.random_seed
         )
         
-        # DEBUG: Show all available models before filtering
-        st.info(f"🔍 DEBUG: All available models from get_supervised_models(): {list(models.keys())}")
-        
-        # Check if SVM should be available for this dataset size
-        if total_samples <= 20000:
-            st.info(f"🔍 DEBUG: Dataset size ({total_samples}) allows SVM (threshold: 20000)")
-        else:
-            st.info(f"🔍 DEBUG: Dataset size ({total_samples}) would normally exclude SVM")
-        
-        # Apply user's model selection if configured
+        # First, handle large dataset optimization (if no user selection)
         selected_models = st.session_state.get('selected_models')
+        if total_samples > 20000 and not selected_models:
+            # Large dataset: Remove slow SVM models (only if user hasn't made a selection)
+            st.warning(f"⚡ **Large Dataset Detected** ({total_samples:,} samples)")
+            st.info("🚀 Using **Fast Models Only** (LogReg, RF, XGBoost, MLP). SVMs skipped (too slow).")
+            models = {k: v for k, v in models.items() if 'SVM' not in k}
+        
+        # Apply user's model selection if configured (this takes priority)
         if selected_models:
-            st.info(f"🔍 DEBUG: User selected models: {selected_models}")
             
             # Map UI model names to actual implementation names
             model_mapping = {
@@ -2263,7 +2590,6 @@ Auto-filtering classes with <{st.session_state.min_class_samples} samples to pre
                 else:
                     expanded_selection.append(selected)
             
-            st.info(f"🔍 DEBUG: Expanded selection: {expanded_selection}")
             
             # Filter models to only include user-selected ones (or their variants)
             models = {name: model for name, model in models.items() if name in expanded_selection}
@@ -2276,22 +2602,11 @@ Auto-filtering classes with <{st.session_state.min_class_samples} samples to pre
         else:
             st.info(f"⚙️ Using all available models: {list(models.keys())}")
         
-        # DEBUG: Check models loaded
-        st.info(f"🔍 DEBUG: Loaded {len(models)} models: {list(models.keys())}")
-        
-        if total_samples > 20000:
-            # Large dataset: Remove slow SVM models
-            st.warning(f"⚡ **Large Dataset Detected** ({total_samples:,} samples)")
-            st.info("🚀 Using **Fast Models Only** (LogReg, RF, XGBoost, MLP). SVMs skipped (too slow).")
-            models = {k: v for k, v in models.items() if 'SVM' not in k}
-        
         # Determine appropriate CV strategy based on data size
         from collections import Counter
         class_counts = Counter(y_train)  # Use training set only
         min_class_count = min(class_counts.values())
         
-        # DEBUG: Class distribution check
-        st.info(f"🔍 DEBUG: Class counts - Total classes: {len(class_counts)}, Min samples per class: {min_class_count}")
         
         # Check if dataset is too small for CV
         if min_class_count < 2:
@@ -2408,8 +2723,6 @@ Auto-filtering classes with <{st.session_state.min_class_samples} samples to pre
             class_counts = {k: v for k, v in class_counts.items() if k in valid_classes}
             min_class_count = min(class_counts.values())
             
-            # DEBUG: After auto-fix
-            st.info(f"🔍 DEBUG: After auto-fix - Classes: {len(class_counts)}, Min samples: {min_class_count}")
 
         # Get user-configured CV folds with safety constraints
         user_cv_folds = st.session_state.get('advanced_config', {}).get('validation', {}).get('cv_folds', 5)
@@ -2431,8 +2744,6 @@ Auto-filtering classes with <{st.session_state.min_class_samples} samples to pre
         # Evaluate models with holdout set
         evaluator = ClassificationEvaluator(n_folds=n_folds, n_repeats=n_repeats)
         
-        # DEBUG: Evaluator created
-        st.info(f"🔍 DEBUG: Evaluator created with {n_folds}-fold CV, {n_repeats} repeats")
         
         # NEW: Dimensionality reduction evaluation
         if st.session_state.get('dimred_enabled') != 'off':
@@ -2455,14 +2766,6 @@ Auto-filtering classes with <{st.session_state.min_class_samples} samples to pre
                 representative_models, X_raw_train, y_raw_train, task_type="classification"
             )
             
-            # DEBUG: Show what's actually in dimred_results
-            st.info(f"🔍 DEBUG: Dimred evaluation completed. Keys: {list(dimred_results.keys()) if dimred_results else 'None'}")
-            if dimred_results:
-                for key, value in dimred_results.items():
-                    st.info(f"🔍 DEBUG: dimred_results['{key}'] type: {type(value)}")
-                    if hasattr(value, 'explained_variance_ratio_'):
-                        st.info(f"🔍 DEBUG: Found PCA-like object in '{key}' with {len(value.explained_variance_ratio_)} components")
-            
             # Store dimred results for PCA tab
             st.session_state.dimred_results = dimred_results
             
@@ -2476,8 +2779,6 @@ Auto-filtering classes with <{st.session_state.min_class_samples} samples to pre
         
         results = {}
         
-        # DEBUG: Starting model training loop
-        st.info(f"🔍 DEBUG: Starting training loop for {len(models)} models")
         
         # NEW: Display CV Strategy Info
         st.info(f"📊 **Training {len(models)} models** with automatic CV strategy selection...")
@@ -2583,14 +2884,44 @@ Your dataset has **{n_samples:,} samples** which is very large for clustering.
             
             st.info(f"📊 **Clustering Sample:** {X_for_clustering.shape[0]:,} samples × {X_for_clustering.shape[1]} features")
         
-        # Get models with optimizations for dataset size
-        models = get_clustering_models(st.session_state.random_seed, n_samples=n_samples)
+        # Get models with optimizations for dataset size (cached)
+        models = cached_get_models(
+            task_type='clustering',
+            random_seed=st.session_state.random_seed
+        )
         
-        # Remove slow models for large datasets
-        if n_samples > 20000:
-            slow_models = ['DBSCAN', 'AgglomerativeClustering']
-            models = {k: v for k, v in models.items() if k not in slow_models}
-            st.info(f"🚀 **Fast Models Only:** Removed slow algorithms (DBSCAN, Agglomerative) for large dataset")
+        # Apply user's model selection if configured (this takes priority)
+        selected_models = st.session_state.get('selected_models')
+        if selected_models:
+            # Map UI model names to actual implementation names for clustering
+            model_mapping = {
+                'GaussianMixture': ['GMM'],  # UI might show different names
+            }
+            
+            # Expand selection to include all variants
+            expanded_selection = []
+            for selected in selected_models:
+                if selected in model_mapping:
+                    expanded_selection.extend(model_mapping[selected])
+                else:
+                    expanded_selection.append(selected)
+            
+            # Filter models to only include user-selected ones
+            models = {name: model for name, model in models.items() if name in expanded_selection}
+            st.info(f"⚙️ Using your selected models: {list(models.keys())}")
+            
+            # Check if any selected models are missing
+            missing_models = [m for m in expanded_selection if m not in models]
+            if missing_models:
+                st.warning(f"⚠️ Some selected models are not available: {missing_models}")
+        else:
+            # Remove slow models for large datasets (only if user hasn't made a selection)
+            if n_samples > 20000:
+                slow_models = ['DBSCAN', 'AgglomerativeClustering']
+                models = {k: v for k, v in models.items() if k not in slow_models}
+                st.info(f"🚀 **Fast Models Only:** Removed slow algorithms (DBSCAN, Agglomerative) for large dataset")
+            else:
+                st.info(f"⚙️ Using all available models: {list(models.keys())}")
         
         # NEW: Hybrid dimensionality reduction evaluation for clustering
         if st.session_state.get('dimred_enabled') != 'off' and n_samples < 100000:
@@ -2802,8 +3133,15 @@ Your dataset has **{n_samples:,} samples** which is very large for clustering.
                 
             for pca_comp in pca_components_list:
                 try:
+                    # Handle missing values before PCA
+                    from sklearn.impute import SimpleImputer
+                    X_for_pca = X.copy()
+                    if pd.DataFrame(X_for_pca).isnull().any().any():
+                        imputer = SimpleImputer(strategy='median')
+                        X_for_pca = imputer.fit_transform(X_for_pca)
+                    
                     pca = PCA(n_components=pca_comp, random_state=random_state)
-                    X_pca = pca.fit_transform(X)
+                    X_pca = pca.fit_transform(X_for_pca)
                     
                     kmeans_pca = KMeans(n_clusters=k, random_state=random_state, n_init=n_init, max_iter=100)
                     labels_pca = kmeans_pca.fit_predict(X_pca)
@@ -2888,44 +3226,57 @@ Your dataset has **{n_samples:,} samples** which is very large for clustering.
                 "📄 Report"
             ])
         
+        # Initialize tab modules (with dashboard reference for backward compatibility)
+        data_overview_tab = DataOverviewTab(dashboard_instance=self)
+        models_tab = ModelsTab(dashboard_instance=self)
+        professional_tab = ProfessionalAutoMLTab(dashboard_instance=self)
+        pca_tab_module = PCAAnalysisTab(dashboard_instance=self)
+        explainability_tab = ExplainabilityTab(dashboard_instance=self)
+        recommendation_tab = RecommendationTab(dashboard_instance=self)
+        report_tab_module = ReportTab(dashboard_instance=self)
+        
         with tab1:
-            self.render_data_overview()
+            data_overview_tab.render()
         
         # Professional AutoML tab
         if professional_results:
             with tab2 if not standard_results else tab3:
-                self.render_professional_automl_tab()
+                professional_tab.render()
         
         # Standard Models tab (if available)
         if standard_results:
             with tab2:
-                if st.session_state.task_type == "Classification":
-                    self.render_classification_results()
-                else:
-                    self.render_clustering_results()
+                models_tab.render()
         
         # Adjust tab indices based on what's available
         if professional_results and standard_results:
             # Both available: Data, Models, Professional, PCA, Explain, Recommend, Report
             pca_tab, explain_tab, recommend_tab, report_tab = tab4, tab5, tab6, tab7
+            insights_tab = None  # No insights tab when both are available
         elif professional_results:
             # Professional only: Data, Professional, PCA, Explain, Recommend, Report, Insights
-            pca_tab, explain_tab, recommend_tab, report_tab = tab3, tab4, tab5, tab6
+            pca_tab, explain_tab, recommend_tab, report_tab, insights_tab = tab3, tab4, tab5, tab6, tab7
         else:
             # Standard only: Data, Models, PCA, Explain, Recommend, Report
             pca_tab, explain_tab, recommend_tab, report_tab = tab3, tab4, tab5, tab6
+            insights_tab = None
         
         with pca_tab:
-            self.render_pca_analysis()
+            pca_tab_module.render()
         
         with explain_tab:
-            self.render_explainability()
+            explainability_tab.render()
         
         with recommend_tab:
-            self.render_recommendation()
+            recommendation_tab.render()
         
         with report_tab:
-            self.render_report()
+            report_tab_module.render()
+        
+        # Render insights tab for professional results
+        if insights_tab is not None and professional_results:
+            with insights_tab:
+                self.render_professional_insights()
     
     def render_professional_automl_tab(self):
         """Render dedicated Professional AutoML results tab."""
@@ -2968,6 +3319,169 @@ Your dataset has **{n_samples:,} samples** which is very large for clustering.
                     if 'class_balance' in dataset_stats:
                         st.metric("⚖️ Class Balance", f"{dataset_stats['class_balance']:.3f}")
     
+    def render_professional_insights(self):
+        """Render professional ML insights and recommendations."""
+        st.markdown("### 🎯 **Professional ML Insights**")
+        
+        professional_results = st.session_state.get('professional_results')
+        
+        if not professional_results:
+            st.info("🎯 Professional insights will be displayed here after running Professional AutoML.")
+            return
+        
+        # Check if we have individual model results
+        if 'individual_models' not in professional_results or not professional_results['individual_models']:
+            st.warning("⚠️ No model results available for insights.")
+            return
+        
+        # Display AI-generated insights
+        st.markdown("#### 🧠 **AI Engineer Insights**")
+        
+        # Get model scores for analysis
+        model_scores = {}
+        for name, result in professional_results['individual_models'].items():
+            if 'best_score' in result and result['best_score'] > -1000:
+                model_scores[name] = result['best_score']
+        
+        if model_scores:
+            best_model = max(model_scores, key=model_scores.get)
+            worst_model = min(model_scores, key=model_scores.get)
+            score_diff = model_scores[best_model] - model_scores[worst_model]
+            
+            insights = []
+            
+            # Model performance insights
+            if score_diff > 0.1:
+                insights.append(f"🎯 **Significant Model Differences:** {best_model} outperforms {worst_model} by {score_diff:.3f}. Consider ensemble approaches.")
+            elif score_diff < 0.02:
+                insights.append("⚖️ **Similar Performance:** Models perform similarly. Consider simplicity and inference speed.")
+            
+            # Dataset size insights
+            dataset_info = professional_results.get('dataset_info', {})
+            n_samples = dataset_info.get('n_samples', 0)
+            n_features = dataset_info.get('n_features', 0)
+            
+            if n_samples < 1000:
+                insights.append("⚠️ **Small Dataset Warning:** Consider regularization, cross-validation, and simpler models to avoid overfitting.")
+            elif n_samples > 100000:
+                insights.append("📈 **Large Dataset:** Consider using gradient boosting, deep learning, or distributed training approaches.")
+            
+            if n_features > n_samples:
+                insights.append("⚠️ **High Dimensionality:** Features exceed samples. Apply feature selection or dimensionality reduction.")
+            
+            # Tree-based model insights
+            tree_models = [name for name in model_scores.keys() if 'Forest' in name or 'XGB' in name or 'LGBM' in name]
+            if tree_models and any(model_scores[m] == max(model_scores.values()) for m in tree_models):
+                insights.append("🌲 **Tree-Based Success:** Random Forest performs well. Consider XGBoost, LightGBM, or CatBoost for potential improvements.")
+            
+            for insight in insights:
+                st.info(insight)
+        else:
+            st.warning("⚠️ No successful model scores available for insights.")
+        
+        # Next steps recommendations
+        st.markdown("#### 🔧 **Next Steps - Professional ML Engineering**")
+        
+        recommendations = [
+            "**Feature Engineering:** Create domain-specific features, polynomial interactions, or time-based features",
+            "**Advanced Validation:** Implement time-series aware splits, group-based validation, or stratified sampling",
+            "**Model Calibration:** Apply Platt scaling or isotonic regression for probability calibration",
+            "**Uncertainty Quantification:** Implement prediction intervals or confidence estimation",
+            "**Production Optimization:** Consider model compression, quantization, or knowledge distillation",
+            "**Monitoring Setup:** Implement drift detection, performance monitoring, and automated retraining"
+        ]
+        
+        for rec in recommendations:
+            st.write(f"• {rec}")
+        
+        # Advanced techniques
+        st.markdown("#### 🎓 **Advanced ML Engineering Techniques**")
+        
+        task_type = professional_results.get('dataset_info', {}).get('task_type', 'classification')
+        
+        if task_type == 'classification':
+            st.markdown("""
+**For Classification:**
+- Multi-label classification with label powerset or binary relevance
+- Cost-sensitive learning for imbalanced datasets
+- Conformal prediction for uncertainty quantification
+            """)
+        elif task_type == 'regression':
+            st.markdown("""
+**For Regression:**
+- Multi-output regression with target transformations
+- Quantile regression for risk assessment
+- Bayesian optimization for expensive function approximation
+            """)
+        else:
+            st.markdown("""
+**For Clustering:**
+- Hierarchical clustering with optimal number selection
+- Density-based clustering for arbitrary shapes
+- Semi-supervised clustering with constraints
+            """)
+        
+        st.markdown("""
+**Cross-Domain:**
+- Transfer learning from pre-trained models
+- Meta-learning for few-shot scenarios
+- Automated machine learning (AutoML) pipelines
+        """)
+        
+        # Add visualizations for insights
+        st.markdown("#### 📈 Model Performance Visualizations")
+        
+        if model_scores:
+            # Create performance comparison chart
+            import plotly.graph_objects as go
+            
+            fig = go.Figure(data=[
+                go.Bar(
+                    x=list(model_scores.keys()),
+                    y=list(model_scores.values()),
+                    marker_color='lightblue',
+                    text=[f"{score:.4f}" for score in model_scores.values()],
+                    textposition='auto',
+                )
+            ])
+            
+            fig.update_layout(
+                title="Model Performance Comparison",
+                xaxis_title="Model",
+                yaxis_title="Score",
+                height=400
+            )
+            
+            st.plotly_chart(fig, width='stretch')
+            
+            # Training time comparison if available
+            training_times = {}
+            for name, result in professional_results['individual_models'].items():
+                if 'optimization_time' in result:
+                    training_times[name] = result['optimization_time']
+            
+            if training_times:
+                st.markdown("#### ⏱️ Training Time Analysis")
+                
+                fig2 = go.Figure(data=[
+                    go.Bar(
+                        x=list(training_times.keys()),
+                        y=list(training_times.values()),
+                        marker_color='lightcoral',
+                        text=[f"{t:.1f}s" for t in training_times.values()],
+                        textposition='auto',
+                    )
+                ])
+                
+                fig2.update_layout(
+                    title="Training Time Comparison",
+                    xaxis_title="Model",
+                    yaxis_title="Time (seconds)",
+                    height=400
+                )
+                
+                st.plotly_chart(fig2, width='stretch')
+    
     def render_pca_analysis(self):
         """Render PCA analysis tab with dimensionality reduction insights."""
         st.subheader("📐 Dimensionality Reduction Analysis")
@@ -3009,22 +3523,29 @@ Your dataset has **{n_samples:,} samples** which is very large for clustering.
                                 X_data = st.session_state.data.select_dtypes(include=[np.number])
                                 y_data = None
                             
+                            # Validate data before transformation
+                            if X_data.shape[1] < 2:
+                                st.error("❌ PCA requires at least 2 features. Current dataset has only 1 feature.")
+                                return
+                            
+                            # Handle missing values before PCA
+                            from sklearn.impute import SimpleImputer
+                            if pd.DataFrame(X_data).isnull().any().any():
+                                st.info("⚠️ Missing values detected. Imputing with median strategy...")
+                                imputer = SimpleImputer(strategy='median')
+                                X_data = imputer.fit_transform(X_data)
+                            
                             # Run PCA analysis
                             dimred_config = DimRedConfig(enable='on', method='pca', variance_target=variance_target)
                             pca = make_dimred(
                                 is_sparse_after_ohe=False,
-                                n_features=X_data.shape[1], 
-                                n_samples=X_data.shape[0],
+                                n_features=X_data.shape[1] if hasattr(X_data, 'shape') else len(X_data[0]), 
+                                n_samples=X_data.shape[0] if hasattr(X_data, 'shape') else len(X_data),
                                 cfg=dimred_config
                             )
                             
                             if pca is None:
                                 st.error("❌ PCA not applicable to this dataset (insufficient features or samples)")
-                                return
-                            
-                            # Validate data before transformation
-                            if X_data.shape[1] < 2:
-                                st.error("❌ PCA requires at least 2 features. Current dataset has only 1 feature.")
                                 return
                             
                             # Fit and transform
@@ -3063,8 +3584,6 @@ Your dataset has **{n_samples:,} samples** which is very large for clustering.
         with col1:
             st.markdown("#### 📈 Explained Variance")
             
-            # Debug: Show what's in dimred_results
-            st.write(f"🔍 DEBUG: Dimred results keys: {list(dimred_results.keys()) if dimred_results else 'None'}")
             
             # Check for PCA results in various possible locations
             pca_transformer = None
@@ -3094,7 +3613,7 @@ Your dataset has **{n_samples:,} samples** which is very large for clustering.
                 from core.visualize import plot_pca_scree
                 try:
                     fig = plot_pca_scree(pca_transformer)
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
                 except Exception as e:
                     st.error(f"Error creating scree plot: {e}")
                     # Fallback to simple visualization
@@ -3142,7 +3661,7 @@ Your dataset has **{n_samples:,} samples** which is very large for clustering.
                             "PCA 2D Projection",
                             explained_variance
                         )
-                        st.plotly_chart(fig_2d, use_container_width=True)
+                        st.plotly_chart(fig_2d, width='stretch')
                     except Exception as e:
                         st.error(f"Error creating 2D plot: {e}")
             else:
@@ -3489,7 +4008,7 @@ Be specific to this dataset size and dimensionality."""
                 st.write("First 10 rows of your dataset:")
                 st.dataframe(
                     data.head(10),
-                    use_container_width=True,
+                    width='stretch',
                     height=400
                 )
             else:
@@ -3529,7 +4048,7 @@ Be specific to this dataset size and dimensionality."""
         if not numeric_data.empty:
             visualizer = Visualizer()
             fig = visualizer.plot_correlation_heatmap(numeric_data.iloc[:, :20])  # Limit to 20 features
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
     
     def render_classification_results(self):
         """Render classification results with overfitting detection."""
@@ -3659,7 +4178,7 @@ Be specific to this dataset size and dimensionality."""
                 template='plotly_white'
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
             
             # Add interpretation guide
             with st.expander("📖 How to Read This Dashboard"):
@@ -3769,7 +4288,7 @@ Be specific to this dataset size and dimensionality."""
         df_leaderboard = pd.DataFrame(leaderboard_data)
         # Sort by Test Acc (the TRUE performance)
         df_leaderboard = df_leaderboard.sort_values('Test Acc', ascending=False)
-        st.dataframe(df_leaderboard, use_container_width=True)
+        st.dataframe(df_leaderboard, width='stretch')
         
         # NEW: Display CV Strategy Report
         if leaderboard_data and 'cv_strategy' in st.session_state.results[leaderboard_data[0]['Model']]:
@@ -3912,7 +4431,7 @@ Be specific and actionable."""
         
         visualizer = Visualizer()
         fig = visualizer.plot_leaderboard(leaderboard, 'Accuracy')
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width='stretch')
         
         # Detailed metrics table
         st.subheader("Detailed Metrics")
@@ -3928,7 +4447,7 @@ Be specific and actionable."""
                 'Log Loss': f"{results.get('log_loss_mean', 0):.4f}"
             })
         
-        st.dataframe(pd.DataFrame(metrics_data), use_container_width=True)
+        st.dataframe(pd.DataFrame(metrics_data), width='stretch')
         
         # ROC Curves
         if len(np.unique(st.session_state.y_processed)) <= 10:  # Only for reasonable number of classes
@@ -3941,7 +4460,7 @@ Be specific and actionable."""
                     st.session_state.y_processed,
                     len(np.unique(st.session_state.y_processed))
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
             except Exception as e:
                 st.warning(f"Could not generate ROC curves: {e}")
         
@@ -3956,9 +4475,389 @@ Be specific and actionable."""
                     best_results['true_labels'],
                     best_results['predictions']
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width='stretch')
         else:
             st.warning("No models successfully completed training. Please check the training logs.")
+        
+        # Advanced Evaluation Sections
+        if st.session_state.results:
+            self.render_advanced_evaluation_sections(st.session_state.results)
+    
+    def render_advanced_evaluation_sections(self, results_dict):
+        """Render advanced evaluation sections with collapsible expanders.
+        
+        Args:
+            results_dict: Dictionary mapping model names to their results
+        """
+        st.markdown("---")
+        st.markdown("## 📊 Advanced Model Evaluation")
+        
+        # Section 1: Extended Performance Metrics
+        with st.expander("📊 Extended Performance Metrics", expanded=False):
+            st.markdown("### Comprehensive Metrics Beyond Accuracy")
+            
+            metrics_data = []
+            for model_name, results in results_dict.items():
+                row = {
+                    'Model': model_name,
+                    'Accuracy': results.get('test_accuracy', 0),
+                    'Balanced_Acc': results.get('balanced_accuracy', None),
+                    'MCC': results.get('matthews_corrcoef', None),
+                    'Cohen_Kappa': results.get('cohen_kappa', None),
+                    'Jaccard': results.get('jaccard_score', None),
+                    'Hamming_Loss': results.get('hamming_loss', None)
+                }
+                metrics_data.append(row)
+            
+            df_metrics = pd.DataFrame(metrics_data)
+            
+            # Style the dataframe with color gradients
+            styled_df = df_metrics.style.background_gradient(
+                subset=['Accuracy', 'Balanced_Acc', 'MCC', 'Cohen_Kappa', 'Jaccard'],
+                cmap='RdYlGn',
+                vmin=0, vmax=1
+            ).background_gradient(
+                subset=['Hamming_Loss'],
+                cmap='RdYlGn_r',
+                vmin=0, vmax=1
+            ).format({
+                'Accuracy': '{:.4f}',
+                'Balanced_Acc': '{:.4f}',
+                'MCC': '{:.4f}',
+                'Cohen_Kappa': '{:.4f}',
+                'Jaccard': '{:.4f}',
+                'Hamming_Loss': '{:.4f}'
+            })
+            
+            st.dataframe(styled_df, width='stretch')
+            
+            st.info("""
+            **Metric Explanations:**
+            - **Balanced Accuracy**: Average recall per class (good for imbalanced data)
+            - **MCC**: Matthews Correlation Coefficient (-1 to 1, accounts for all confusion matrix cells)
+            - **Cohen's Kappa**: Agreement between predictions and truth (accounts for chance)
+            - **Jaccard Score**: Intersection over union of predictions
+            - **Hamming Loss**: Fraction of incorrect predictions (lower is better)
+            """)
+        
+        # Section 2: Bias-Variance Analysis
+        with st.expander("🎯 Bias-Variance Analysis", expanded=False):
+            st.markdown("### Understanding Model Complexity")
+            
+            bv_data = {}
+            for model_name, results in results_dict.items():
+                future = results.get('bias_variance_future')
+                bv_result = get_background_result_safe(
+                    future, 
+                    timeout=2.0,
+                    placeholder_msg="⏳ Bias-variance analysis running in background..."
+                )
+                if bv_result:
+                    bv_data[model_name] = bv_result
+            
+            if bv_data:
+                # Display metrics in columns
+                for model_name, bv_result in bv_data.items():
+                    st.markdown(f"#### {model_name}")
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Bias²", f"{bv_result['bias_squared']:.4f}")
+                    
+                    with col2:
+                        st.metric("Variance", f"{bv_result['variance']:.4f}")
+                    
+                    with col3:
+                        ratio = bv_result['bias_variance_ratio']
+                        st.metric("Ratio", f"{ratio:.2f}")
+                    
+                    with col4:
+                        interpretation = bv_result['interpretation']
+                        if "High bias" in interpretation:
+                            st.error(interpretation)
+                        elif "High variance" in interpretation:
+                            st.warning(interpretation)
+                        else:
+                            st.success(interpretation)
+                    
+                    st.markdown("---")
+                
+                # Comparison chart
+                if len(bv_data) > 1:
+                    fig = plot_bias_variance_comparison(bv_data)
+                    st.plotly_chart(fig, width='stretch')
+            else:
+                st.info("⏳ Bias-variance analysis is running in the background. Refresh to see results.")
+            
+            st.info("""
+            **Understanding Bias-Variance:**
+            - **High Bias (Ratio > 2)**: Model is too simple (underfitting). Try more complex models.
+            - **High Variance (Ratio < 0.5)**: Model is too complex (overfitting). Try regularization or simpler models.
+            - **Good Balance**: Model complexity is appropriate for the data.
+            """)
+        
+        # Section 3: Learning Curves
+        with st.expander("📈 Learning Curves", expanded=False):
+            st.markdown("### Performance vs Training Set Size")
+            
+            for model_name, results in results_dict.items():
+                future = results.get('learning_curves_future')
+                lc_result = get_background_result_safe(
+                    future,
+                    timeout=2.0,
+                    placeholder_msg="⏳ Learning curves analysis running in background..."
+                )
+                
+                if lc_result and 'error' not in lc_result:
+                    st.markdown(f"#### {model_name}")
+                    fig = plot_learning_curve(lc_result)
+                    st.plotly_chart(fig, width='stretch')
+                    
+                    # Interpretation
+                    train_final = lc_result['train_scores_mean'][-1]
+                    test_final = lc_result['test_scores_mean'][-1]
+                    gap = train_final - test_final
+                    
+                    if gap > 0.1:
+                        st.warning(f"⚠️ Large gap ({gap:.3f}) suggests overfitting. More data may not help.")
+                    elif test_final < 0.7 and gap < 0.05:
+                        st.info(f"ℹ️ Both curves are low. Model may need more features or complexity.")
+                    else:
+                        st.success(f"✅ Curves look good! Gap = {gap:.3f}")
+                    
+                    st.markdown("---")
+            
+            st.info("""
+            **Interpreting Learning Curves:**
+            - **Converging curves**: Model has learned the pattern well
+            - **Large gap**: Overfitting - model memorizes training data
+            - **Both curves low**: Underfitting - model needs more capacity
+            - **Increasing test score**: More data would likely help
+            """)
+        
+        # Section 4: Calibration & Confidence Analysis
+        with st.expander("🔬 Calibration & Confidence Analysis", expanded=False):
+            st.markdown("### Probability Calibration Quality")
+            
+            for model_name, results in results_dict.items():
+                calibration = results.get('calibration')
+                confidence_analysis = results.get('confidence_analysis')
+                
+                if calibration:
+                    st.markdown(f"#### {model_name}")
+                    
+                    # Display ECE
+                    ece = calibration.get('ece')
+                    if ece is not None:
+                        col1, col2 = st.columns([1, 3])
+                        with col1:
+                            st.metric("Expected Calibration Error (ECE)", f"{ece:.4f}")
+                            if ece < 0.05:
+                                st.success("Well calibrated")
+                            elif ece < 0.10:
+                                st.warning("Moderately calibrated")
+                            else:
+                                st.error("Poorly calibrated")
+                        
+                        with col2:
+                            # Calibration curve for first class
+                            fig_cal = plot_calibration_curve(calibration, class_idx=0)
+                            st.plotly_chart(fig_cal, width='stretch')
+                    
+                    # Confidence analysis
+                    if confidence_analysis:
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            st.metric(
+                                "Avg Confidence (Correct)",
+                                f"{confidence_analysis['avg_confidence_correct']:.3f}"
+                            )
+                        
+                        with col2:
+                            st.metric(
+                                "Avg Confidence (Incorrect)",
+                                f"{confidence_analysis['avg_confidence_incorrect']:.3f}"
+                            )
+                        
+                        with col3:
+                            separation = confidence_analysis['confidence_separation']
+                            st.metric("Confidence Separation", f"{separation:.3f}")
+                            if separation > 0.15:
+                                st.success("Good separation")
+                            else:
+                                st.warning("Poor separation")
+                        
+                        # Display confidence histogram
+                        fig_conf = plot_confidence_histogram(confidence_analysis)
+                        st.plotly_chart(fig_conf, width='stretch')
+                        
+                        # High confidence errors
+                        high_conf_errors = confidence_analysis['high_confidence_errors']
+                        if high_conf_errors > 0:
+                            st.warning(f"⚠️ {high_conf_errors} high-confidence errors detected. "
+                                     "Model is overconfident on some mistakes.")
+                    
+                    st.markdown("---")
+            
+            st.info("""
+            **Calibration Quality:**
+            - **Well-calibrated**: Predicted probabilities match actual frequencies
+            - **ECE < 0.05**: Excellent calibration
+            - **High confidence separation**: Model knows when it's uncertain
+            - **High-confidence errors**: Model is overconfident - consider calibration techniques
+            """)
+        
+        # Section 5: Detailed Confusion Matrix Analysis
+        with st.expander("🧮 Detailed Confusion Matrix Analysis", expanded=False):
+            st.markdown("### Per-Class Performance Breakdown")
+            
+            for model_name, results in results_dict.items():
+                confusion_analysis = results.get('confusion_analysis')
+                
+                if confusion_analysis:
+                    st.markdown(f"#### {model_name}")
+                    
+                    # Per-class metrics table
+                    per_class_data = []
+                    for class_name in confusion_analysis['per_class_precision'].keys():
+                        row = {
+                            'Class': class_name,
+                            'Precision': confusion_analysis['per_class_precision'][class_name],
+                            'Recall': confusion_analysis['per_class_recall'][class_name],
+                            'F1-Score': confusion_analysis['per_class_f1'][class_name]
+                        }
+                        per_class_data.append(row)
+                    
+                    df_per_class = pd.DataFrame(per_class_data)
+                    styled_df = df_per_class.style.background_gradient(
+                        subset=['Precision', 'Recall', 'F1-Score'],
+                        cmap='RdYlGn',
+                        vmin=0, vmax=1
+                    ).format({
+                        'Precision': '{:.4f}',
+                        'Recall': '{:.4f}',
+                        'F1-Score': '{:.4f}'
+                    })
+                    
+                    st.dataframe(styled_df, width='stretch')
+                    
+                    # Top misclassification patterns
+                    if confusion_analysis['misclassification_patterns']:
+                        st.markdown("##### Top Misclassification Patterns")
+                        
+                        misc_df = pd.DataFrame(
+                            confusion_analysis['misclassification_patterns'][:5]
+                        )
+                        st.dataframe(misc_df, width='stretch')
+                    
+                    st.markdown("---")
+        
+        # Section 6: Statistical Significance Tests
+        with st.expander("📉 Statistical Significance Tests", expanded=False):
+            st.markdown("### Are Performance Differences Real?")
+            
+            comparator = StatisticalModelComparator()
+            
+            # Pairwise tests
+            pairwise_results = comparator.compute_pairwise_tests(results_dict)
+            
+            if pairwise_results and pairwise_results['significant_differences']:
+                st.markdown("#### Significant Differences Found")
+                
+                for diff in pairwise_results['significant_differences']:
+                    st.success(
+                        f"**{diff['winner']}** significantly outperforms **{diff['loser']}** "
+                        f"(p = {diff['p_value']:.4f}) - {diff['interpretation']}"
+                    )
+                
+                # Heatmap of p-values
+                fig_heatmap = plot_pairwise_pvalues_heatmap(pairwise_results)
+                st.plotly_chart(fig_heatmap, width='stretch')
+            else:
+                st.info("No statistically significant differences found between models (p ≥ 0.05)")
+            
+            # Friedman test (if 3+ models)
+            if len(results_dict) >= 3:
+                friedman_result = comparator.compute_friedman_test(results_dict)
+                
+                if friedman_result:
+                    st.markdown("#### Friedman Test (Overall Comparison)")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric("Test Statistic", f"{friedman_result['statistic']:.4f}")
+                    with col2:
+                        st.metric("P-Value", f"{friedman_result['p_value']:.4f}")
+                    
+                    st.info(friedman_result['interpretation'])
+                    
+                    # Model rankings
+                    st.markdown("##### Model Rankings (Lower is Better)")
+                    rankings_df = pd.DataFrame(
+                        friedman_result['sorted_rankings'],
+                        columns=['Model', 'Mean Rank']
+                    )
+                    st.dataframe(rankings_df, width='stretch')
+            
+            st.info("""
+            **Statistical Testing:**
+            - **p < 0.05**: Statistically significant difference
+            - **p ≥ 0.05**: No significant difference (could be due to chance)
+            - **Friedman Test**: Non-parametric test for comparing 3+ models
+            - **Lower rank**: Better average performance across CV folds
+            """)
+        
+        # Section 7: Cross-Validation Stability
+        with st.expander("🔄 Cross-Validation Stability", expanded=False):
+            st.markdown("### How Reliable Are These Results?")
+            
+            # Prepare CV scores
+            cv_scores_dict = {}
+            stability_data = []
+            
+            for model_name, results in results_dict.items():
+                cv_scores = results.get('cv_scores')
+                if cv_scores and len(cv_scores) > 1:
+                    cv_scores_dict[model_name] = cv_scores
+                    
+                    stability = comparator.compute_cv_stability(cv_scores)
+                    if stability:
+                        stability_data.append({
+                            'Model': model_name,
+                            'Mean CV Score': stability['mean'],
+                            'Std Dev': stability['std'],
+                            'Stability Index': stability['stability_index'],
+                            'Interpretation': stability['interpretation']
+                        })
+            
+            if stability_data:
+                # Stability metrics table
+                df_stability = pd.DataFrame(stability_data)
+                styled_df = df_stability.style.background_gradient(
+                    subset=['Stability Index'],
+                    cmap='RdYlGn',
+                    vmin=0, vmax=1
+                ).format({
+                    'Mean CV Score': '{:.4f}',
+                    'Std Dev': '{:.4f}',
+                    'Stability Index': '{:.4f}'
+                })
+                
+                st.dataframe(styled_df, width='stretch')
+                
+                # Box plot
+                fig_boxplot = plot_cv_stability_boxplot(cv_scores_dict)
+                st.plotly_chart(fig_boxplot, width='stretch')
+            
+            st.info("""
+            **Stability Metrics:**
+            - **High Stability (>0.9)**: Very consistent performance - reliable model
+            - **Moderate Stability (0.7-0.9)**: Some variability but acceptable
+            - **Low Stability (<0.7)**: High variability - results may not be reliable
+            - **Lower Std Dev**: More stable predictions across different data splits
+            """)
     
     def render_clustering_results(self):
         """Render clustering results."""
@@ -4053,7 +4952,7 @@ Be specific about the metrics and realistic about clustering quality."""
                 'Stability': f"{results.get('stability', 0):.4f}"
             })
         
-        st.dataframe(pd.DataFrame(metrics_data), use_container_width=True)
+        st.dataframe(pd.DataFrame(metrics_data), width='stretch')
         
         # UMAP projection
         st.subheader("UMAP Cluster Visualization")
@@ -4067,7 +4966,7 @@ Be specific about the metrics and realistic about clustering quality."""
             
             visualizer = Visualizer()
             fig = visualizer.plot_umap_projection(X_umap, best_labels, f"UMAP - {best_model_name}")
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         except Exception as e:
             st.warning(f"Could not generate UMAP: {e}")
         
@@ -4084,7 +4983,7 @@ Be specific about the metrics and realistic about clustering quality."""
                         range(kmeans_model.k_range[0], kmeans_model.k_range[1] + 1),
                         kmeans_model.inertias
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
                 
                 with col2:
                     st.subheader("Silhouette Scores")
@@ -4092,14 +4991,23 @@ Be specific about the metrics and realistic about clustering quality."""
                         range(kmeans_model.k_range[0], kmeans_model.k_range[1] + 1),
                         kmeans_model.silhouette_scores
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
     
     def render_explainability(self):
         """Render explainability tab with caching and optimization."""
         st.subheader("🔍 Model Explainability")
         
-        if not st.session_state.results:
+        # Check for both standard and professional results
+        has_results = st.session_state.results or st.session_state.get('professional_results')
+        
+        if not has_results:
             st.info("Run AutoML to see explainability results")
+            return
+        
+        # Check if we have models to explain
+        if not st.session_state.get('models'):
+            st.warning("⚠️ No trained models available for explainability analysis.")
+            st.info("💡 Models may have failed during training. Check the console logs for errors.")
             return
         
         # Check if clustering task
@@ -4126,6 +5034,25 @@ Be specific about the metrics and realistic about clustering quality."""
             # Silent caching - no need to show message, just faster performance
             
             model = st.session_state.models[selected_model]
+            
+            # Check if X_processed and preprocessor exist
+            if not hasattr(st.session_state, 'X_processed') or st.session_state.X_processed is None:
+                st.warning("⚠️ Processed data not available.")
+                st.info("💡 Explainability requires the preprocessed dataset. Please run AutoML again or ensure data preprocessing was completed.")
+                
+                # Try to show basic model information instead
+                st.markdown("#### 📊 Model Information")
+                st.write(f"**Model Type:** {type(model).__name__}")
+                if hasattr(model, 'get_params'):
+                    st.write("**Parameters:**")
+                    st.json(model.get_params())
+                return
+            
+            if not hasattr(st.session_state, 'preprocessor') or st.session_state.preprocessor is None:
+                st.warning("⚠️ Preprocessor not available.")
+                st.info("💡 Feature names cannot be determined without the preprocessor.")
+                return
+            
             X = st.session_state.X_processed
             feature_names = st.session_state.preprocessor.get_feature_names()
             
@@ -4171,7 +5098,7 @@ Be specific about the metrics and realistic about clustering quality."""
                             orientation='h'
                         )
                         fig_importance.update_layout(height=400)
-                        st.plotly_chart(fig_importance, use_container_width=True)
+                        st.plotly_chart(fig_importance, width='stretch')
                         
                     except Exception as e:
                         st.warning(f"Could not generate feature importance plot: {e}")
@@ -4194,7 +5121,7 @@ Be specific about the metrics and realistic about clustering quality."""
                         
                         if metrics_data:
                             metrics_df = pd.DataFrame(metrics_data, columns=['Metric', 'Value'])
-                            st.dataframe(metrics_df, use_container_width=True, hide_index=True)
+                            st.dataframe(metrics_df, width='stretch', hide_index=True)
                         
                         # Add training vs test comparison
                         if 'test_accuracy' in results and 'train_accuracy' in results:
@@ -4531,7 +5458,7 @@ Focus on the algorithm's behavior rather than specific features."""
                         top_n=15,
                         title="Top 15 Features by SHAP Importance"
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
                 
                 elif 'feature_importance' in explanations:
                     st.subheader("Feature Importance")
@@ -4540,7 +5467,7 @@ Focus on the algorithm's behavior rather than specific features."""
                         explanations['feature_importance'],
                         top_n=15
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
                 
                 elif 'coef_importance' in explanations:
                     st.subheader("Coefficient Importance")
@@ -4549,7 +5476,7 @@ Focus on the algorithm's behavior rather than specific features."""
                         explanations['coef_importance'],
                         top_n=15
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
                 
                 elif 'permutation_importance' in explanations:
                     st.subheader("Permutation Feature Importance")
@@ -4560,7 +5487,7 @@ Focus on the algorithm's behavior rather than specific features."""
                         top_n=15,
                         title="Top 15 Features by Permutation Importance"
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
                 
                 # Top features list
                 if explainer:
@@ -4571,22 +5498,89 @@ Focus on the algorithm's behavior rather than specific features."""
                             top_features,
                             columns=['Feature', 'Importance']
                         )
-                        st.dataframe(df_features, use_container_width=True)
+                        st.dataframe(df_features, width='stretch')
     
     def render_recommendation(self):
         """Render recommendation tab with comprehensive visualizations."""
         st.subheader("🎯 AI-Powered Model Recommendations")
         
+        # Check for both standard and professional results
+        has_results = st.session_state.results or st.session_state.get('professional_results')
+        
+        if not has_results:
+            st.info("Run AutoML to see recommendations")
+            return
+        
+        # For clustering tasks, show professional results summary
+        if st.session_state.task_type == "Clustering":
+            professional_results = st.session_state.get('professional_results')
+            if professional_results and 'individual_models' in professional_results:
+                st.markdown("### 🎯 Clustering Model Recommendations")
+                
+                # Get best model
+                best_model = None
+                best_score = -float('inf')
+                for name, result in professional_results['individual_models'].items():
+                    if result.get('best_score', -1000) > best_score:
+                        best_score = result.get('best_score', -1000)
+                        best_model = (name, result)
+                
+                if best_model:
+                    st.success(f"✅ **Recommended Model:** {best_model[0]}")
+                    st.metric("Silhouette Score", f"{best_score:.4f}")
+                    
+                    st.markdown("#### ⚙️ Best Parameters")
+                    params_df = pd.DataFrame([
+                        {'Parameter': k, 'Value': str(v)} 
+                        for k, v in best_model[1].get('best_params', {}).items()
+                    ])
+                    st.dataframe(params_df, width='stretch')
+                    
+                    st.markdown("#### 📊 All Models Comparison")
+                    comparison_data = []
+                    for name, result in professional_results['individual_models'].items():
+                        comparison_data.append({
+                            'Model': name,
+                            'Score': f"{result.get('best_score', 0):.4f}",
+                            'Improvement': f"{result.get('improvement_percent', 0):+.1f}%"
+                        })
+                    st.dataframe(pd.DataFrame(comparison_data), width='stretch')
+            else:
+                st.info("Run Professional AutoML to see clustering recommendations")
+            return
+        
         if st.session_state.task_type == "Classification":
-            if 'recommendation' not in st.session_state:
-                st.info("Run AutoML to see recommendations")
+            # Check if we have any results to base recommendations on
+            if not st.session_state.get('results') and not st.session_state.get('professional_results'):
+                st.info("Recommendations will be generated after successful model training")
                 return
             
-            recommendation = st.session_state.recommendation
+            # Try to get recommendation, or generate one if missing
+            recommendation = st.session_state.get('recommendation')
+            
+            # If no recommendation but we have results, generate it
+            if not recommendation and st.session_state.get('results'):
+                try:
+                    from core.meta_selector import MetaModelSelector
+                    meta_selector = MetaModelSelector()
+                    recommendation = meta_selector.get_recommendation_with_rationale(
+                        st.session_state.get('profile'),
+                        st.session_state.results
+                    )
+                    st.session_state.recommendation = recommendation
+                except Exception as e:
+                    st.error(f"Failed to generate recommendation: {e}")
+                    return
+            
+            # For professional results without standard recommendation
+            if not recommendation and st.session_state.get('professional_results'):
+                st.markdown("### 🎯 Professional AutoML Recommendations")
+                self._render_professional_recommendations()
+                return
             
             # Check if recommendation has required fields
             if not recommendation or 'recommended_model' not in recommendation:
-                st.warning("No recommendation available. Please run AutoML first.")
+                st.warning("No recommendation available. Model training may have failed.")
                 return
             
             # Create comprehensive recommendation dashboard
@@ -4620,7 +5614,7 @@ Focus on the algorithm's behavior rather than specific features."""
                             yaxis_title="Accuracy",
                             height=350
                         )
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, width='stretch')
                 except Exception as e:
                     st.warning(f"Could not generate performance chart: {e}")
             
@@ -4684,7 +5678,7 @@ Focus on the algorithm's behavior rather than specific features."""
                             height=300,
                             title="Model Characteristics"
                         )
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, width='stretch')
                         
                 except Exception as e:
                     st.warning(f"Could not generate trade-offs chart: {e}")
@@ -4802,7 +5796,7 @@ Be specific and actionable."""
                         'Model': alt['model'],
                         'Score': f"{alt['score']:.4f}"
                     })
-                st.dataframe(pd.DataFrame(alt_data), use_container_width=True)
+                st.dataframe(pd.DataFrame(alt_data), width='stretch')
         else:
             # Clustering recommendation
             if not st.session_state.results:
@@ -4971,9 +5965,16 @@ Be specific and realistic about clustering quality and utility."""
                         with viz_tab1:
                             st.markdown("**PCA 2D Projection of Clusters**")
                             
+                            # Handle missing values before PCA
+                            from sklearn.impute import SimpleImputer
+                            X_for_viz = X.copy()
+                            if pd.DataFrame(X_for_viz).isnull().any().any():
+                                imputer = SimpleImputer(strategy='median')
+                                X_for_viz = imputer.fit_transform(X_for_viz)
+                            
                             # Perform PCA for 2D visualization
                             pca = PCA(n_components=2, random_state=42)
-                            X_pca = pca.fit_transform(X)
+                            X_pca = pca.fit_transform(X_for_viz)
                             
                             # Create DataFrame for plotting
                             plot_df = pd.DataFrame({
@@ -5003,7 +6004,7 @@ Be specific and realistic about clustering quality and utility."""
                                 legend=dict(orientation="v", yanchor="top", y=1, xanchor="left", x=1.02)
                             )
                             
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, width='stretch')
                             
                             st.info(f"""
                             **How to Read This:**
@@ -5049,10 +6050,10 @@ Be specific and realistic about clustering quality and utility."""
                                 showlegend=False
                             )
                             
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, width='stretch')
                             
                             # Show table
-                            st.dataframe(cluster_df, use_container_width=True)
+                            st.dataframe(cluster_df, width='stretch')
                             
                             # Balance assessment
                             max_size = cluster_df['Size'].max()
@@ -5132,7 +6133,7 @@ Be specific and realistic about clustering quality and utility."""
                                 yaxis=dict(showticklabels=False)
                             )
                             
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, width='stretch')
                             
                             # Silhouette interpretation
                             st.info(f"""
@@ -5156,7 +6157,7 @@ Be specific and realistic about clustering quality and utility."""
                                 for d in silhouette_data
                             ])
                             
-                            st.dataframe(cluster_metrics, use_container_width=True)
+                            st.dataframe(cluster_metrics, width='stretch')
                         
                         with viz_tab4:
                             st.markdown("**Cluster Characteristics Profile**")
@@ -5193,7 +6194,7 @@ Be specific and realistic about clustering quality and utility."""
                                 # Display as styled dataframe
                                 st.dataframe(
                                     profile_df.style.background_gradient(cmap='RdYlGn', subset=feature_cols),
-                                    use_container_width=True
+                                    width='stretch'
                                 )
                                 
                                 # Radar chart for cluster comparison (if 3-6 features)
@@ -5222,7 +6223,7 @@ Be specific and realistic about clustering quality and utility."""
                                         height=500
                                     )
                                     
-                                    st.plotly_chart(fig, use_container_width=True)
+                                    st.plotly_chart(fig, width='stretch')
                                 
                                 st.success("""
                                 **💡 Use These Insights To:**
@@ -5241,12 +6242,102 @@ Be specific and realistic about clustering quality and utility."""
                     logger.error(f"Failed to create clustering visualizations: {e}")
                     st.warning(f"Visualization error: {str(e)[:200]}")
     
+    def _render_professional_recommendations(self):
+        """Render recommendations for professional AutoML results."""
+        professional_results = st.session_state.get('professional_results')
+        
+        if not professional_results or 'individual_models' not in professional_results:
+            st.warning("No professional results available")
+            return
+        
+        # Get best model
+        best_model_name = None
+        best_score = -float('inf')
+        
+        for name, result in professional_results['individual_models'].items():
+            score = result.get('best_score', -1000)
+            if score > best_score:
+                best_score = score
+                best_model_name = name
+        
+        if not best_model_name or best_score <= -1000:
+            st.error("All models failed during training. Cannot generate recommendations.")
+            return
+        
+        # Display recommendations
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("### 🏆 Recommended Model")
+            st.success(f"**{best_model_name}**")
+            st.metric("Best Score", f"{best_score:.4f}")
+            
+            best_result = professional_results['individual_models'][best_model_name]
+            st.metric("Improvement", f"{best_result.get('improvement_percent', 0):+.1f}%")
+            st.metric("Training Time", f"{best_result.get('optimization_time', 0):.1f}s")
+        
+        with col2:
+            st.markdown("### 📊 Why This Model?")
+            
+            reasons = []
+            if best_score > 0.9:
+                reasons.append("✅ Excellent performance (>90% accuracy)")
+            elif best_score > 0.8:
+                reasons.append("✅ Good performance (>80% accuracy)")
+            
+            if best_result.get('improvement_percent', 0) > 5:
+                reasons.append(f"✅ Significant optimization improvement ({best_result.get('improvement_percent', 0):.1f}%)")
+            
+            if best_result.get('optimization_time', 0) < 60:
+                reasons.append("⚡ Fast training (<1 minute)")
+            
+            if reasons:
+                for reason in reasons:
+                    st.write(reason)
+            else:
+                st.write("This model showed the best performance among all tested models.")
+        
+        st.markdown("### 📈 All Models Performance")
+        
+        comparison_data = []
+        for name, result in professional_results['individual_models'].items():
+            comparison_data.append({
+                'Model': name,
+                'Score': result.get('best_score', -1000),
+                'Improvement': f"{result.get('improvement_percent', 0):+.1f}%",
+                'Training Time (s)': f"{result.get('optimization_time', 0):.1f}",
+                'Recommended': '🏆' if name == best_model_name else ''
+            })
+        
+        df = pd.DataFrame(comparison_data)
+        df = df.sort_values('Score', ascending=False)
+        st.dataframe(df, width='stretch')
+        
+        st.markdown("### 🚀 Deployment Recommendations")
+        recommendations = [
+            "**Model Export:** Save the trained model using joblib or pickle",
+            "**API Development:** Create a REST API using Flask or FastAPI",
+            "**Monitoring:** Implement prediction logging and performance tracking",
+            "**Testing:** Validate on additional hold-out data before production"
+        ]
+        for rec in recommendations:
+            st.write(f"• {rec}")
+    
     def render_report(self):
         """Render report tab."""
         st.subheader("📄 Generate Report")
         
-        if not st.session_state.results:
+        # Check for both standard and professional results
+        has_results = st.session_state.results or st.session_state.get('professional_results')
+        
+        if not has_results:
             st.info("Run AutoML to generate a report")
+            return
+        
+        # Check if models actually trained successfully
+        if not st.session_state.get('models'):
+            st.warning("⚠️ No trained models available for report generation.")
+            st.info("💡 Models may have failed during training. Check the AutoML results for details.")
             return
         
         # AI-Generated Comprehensive Report
@@ -5256,61 +6347,101 @@ Be specific and realistic about clustering quality and utility."""
                     try:
                         # Collect all relevant information
                         is_clustering = st.session_state.task_type == "Clustering"
-                        evaluator = st.session_state.evaluator
                         
-                        if is_clustering:
-                            leaderboard = evaluator.get_leaderboard('silhouette')
-                            best_model = leaderboard[0]
-                            best_name = best_model['model']
-                            best_results = st.session_state.results[best_name]
+                        # Handle both standard and professional results
+                        professional_results = st.session_state.get('professional_results')
+                        standard_results = st.session_state.get('results')
+                        evaluator = st.session_state.get('evaluator')
+                        
+                        # Use professional results if available
+                        if professional_results and 'individual_models' in professional_results:
+                            # Get best model from professional results
+                            best_name = None
+                            best_score = -float('inf')
+                            for name, result in professional_results['individual_models'].items():
+                                if result.get('best_score', -1000) > best_score:
+                                    best_score = result.get('best_score', -1000)
+                                    best_name = name
                             
-                            metrics_summary = f"""**Best Model:** {best_name}
+                            if is_clustering:
+                                metrics_summary = f"""**Best Model:** {best_name}
+**Silhouette Score:** {best_score:.4f}
+**Optimization Time:** {professional_results['individual_models'][best_name].get('optimization_time', 0):.1f}s
+**Trials:** {professional_results['individual_models'][best_name].get('n_trials', 0)}"""
+                                
+                                all_models = "\n".join([
+                                    f"- {name}: Score={result.get('best_score', 0):.4f}, Improvement={result.get('improvement_percent', 0):+.1f}%"
+                                    for name, result in professional_results['individual_models'].items()
+                                ])
+                            else:
+                                metrics_summary = f"""**Best Model:** {best_name}
+**Score:** {best_score:.4f}
+**Improvement:** {professional_results['individual_models'][best_name].get('improvement_percent', 0):+.1f}%
+**Optimization Time:** {professional_results['individual_models'][best_name].get('optimization_time', 0):.1f}s"""
+                                
+                                all_models = "\n".join([
+                                    f"- {name}: Score={result.get('best_score', 0):.4f}"
+                                    for name, result in professional_results['individual_models'].items()
+                                ])
+                        
+                        elif evaluator and standard_results:
+                            # Use standard results with evaluator
+                            if is_clustering:
+                                leaderboard = evaluator.get_leaderboard('silhouette')
+                                best_model = leaderboard[0]
+                                best_name = best_model['model']
+                                best_results = standard_results[best_name]
+                                
+                                metrics_summary = f"""**Best Model:** {best_name}
 **Silhouette Score:** {best_results.get('silhouette', 0):.4f}
 **Davies-Bouldin Score:** {best_results.get('davies_bouldin', 0):.4f}
 **Number of Clusters:** {best_results.get('n_clusters', 0)}"""
-                            
-                            all_models = "\n".join([
-                                f"- {m['model']}: Silhouette={st.session_state.results[m['model']].get('silhouette', 0):.4f}, "
-                                f"Clusters={st.session_state.results[m['model']].get('n_clusters', 0)}"
-                                for m in leaderboard
-                            ])
-                        else:
-                            leaderboard = evaluator.get_leaderboard('accuracy')
-                            best_model = leaderboard[0]
-                            best_name = best_model.get('model', 'Unknown')
-                            best_results = st.session_state.results.get(best_name, {})
-                            
-                            # Try to get metrics from different possible keys
-                            best_accuracy = (
-                                best_model.get('accuracy') or 
-                                best_model.get('score') or
-                                best_results.get('accuracy_mean', 0)
-                            )
-                            best_precision = (
-                                best_model.get('precision') or
-                                best_results.get('precision_macro_mean', 0)
-                            )
-                            best_recall = (
-                                best_model.get('recall') or
-                                best_results.get('recall_macro_mean', 0)
-                            )
-                            
-                            metrics_summary = f"""**Best Model:** {best_name}
+                                
+                                all_models = "\n".join([
+                                    f"- {m['model']}: Silhouette={standard_results[m['model']].get('silhouette', 0):.4f}, "
+                                    f"Clusters={standard_results[m['model']].get('n_clusters', 0)}"
+                                    for m in leaderboard
+                                ])
+                            else:
+                                leaderboard = evaluator.get_leaderboard('accuracy')
+                                best_model = leaderboard[0]
+                                best_name = best_model.get('model', 'Unknown')
+                                best_results = standard_results.get(best_name, {})
+                                
+                                # Try to get metrics from different possible keys
+                                best_accuracy = (
+                                    best_model.get('accuracy') or 
+                                    best_model.get('score') or
+                                    best_results.get('accuracy_mean', 0)
+                                )
+                                best_precision = (
+                                    best_model.get('precision') or
+                                    best_results.get('precision_macro_mean', 0)
+                                )
+                                best_recall = (
+                                    best_model.get('recall') or
+                                    best_results.get('recall_macro_mean', 0)
+                                )
+                                
+                                metrics_summary = f"""**Best Model:** {best_name}
 **Accuracy:** {best_accuracy:.4f}
 **Precision:** {best_precision:.4f}
 **Recall:** {best_recall:.4f}"""
-                            
-                            # Build model list with error handling
-                            model_lines = []
-                            for m in leaderboard[:5]:
-                                model_name = m.get('model', 'Unknown')
-                                acc = (
-                                    m.get('accuracy') or 
-                                    m.get('score') or
-                                    st.session_state.results.get(model_name, {}).get('accuracy_mean', 0)
-                                )
-                                model_lines.append(f"- {model_name}: Accuracy={acc:.4f}")
-                            all_models = "\n".join(model_lines)
+                                
+                                # Build model list with error handling
+                                model_lines = []
+                                for m in leaderboard[:5]:
+                                    model_name = m.get('model', 'Unknown')
+                                    acc = (
+                                        m.get('accuracy') or 
+                                        m.get('score') or
+                                        standard_results.get(model_name, {}).get('accuracy_mean', 0)
+                                    )
+                                    model_lines.append(f"- {model_name}: Accuracy={acc:.4f}")
+                                all_models = "\n".join(model_lines)
+                        else:
+                            st.warning("No evaluator or results available for report generation")
+                            return
                         
                         # Data summary
                         data_summary = f"""**Dataset Size:** {st.session_state.data.shape[0]} samples, {st.session_state.data.shape[1]} features
@@ -5787,7 +6918,7 @@ and an overfitting gap of **{gap:.1%}** ({('✅ Good' if gap < 0.10 else '⚠️
                 st.info("📝 **Configuration**: Using default settings")
             
             # Single unified run button
-            if st.button("🚀 **Run AutoML with My Configuration**", type="primary", use_container_width=True, key="run_unified_automl"):
+            if st.button("🚀 **Run AutoML with My Configuration**", type="primary", width='stretch', key="run_unified_automl"):
                 # Use intelligent mode selection
                 mode = self._determine_execution_mode()
                 st.info(f"🔥 **Executing {mode.title()} AutoML** with your configured preferences...")
@@ -5947,10 +7078,8 @@ and an overfitting gap of **{gap:.1%}** ({('✅ Good' if gap < 0.10 else '⚠️
     
     def _execute_automl(self, mode='standard'):
         """Execute AutoML and transition to results."""
-        st.info("🔍 DEBUG: _execute_automl() started")
         try:
             with st.spinner(f"🚀 Running {mode.title()} AutoML..."):
-                st.info(f"🔍 DEBUG: About to run {mode} AutoML")
                 if mode == 'professional':
                     opt_config = st.session_state.optimization_config
                     self.run_professional_automl(
@@ -5962,17 +7091,11 @@ and an overfitting gap of **{gap:.1%}** ({('✅ Good' if gap < 0.10 else '⚠️
                 else:
                     self.run_automl()
                 
-                st.info("🔍 DEBUG: AutoML method completed")
                 
                 # CRITICAL: Validate results were stored
                 results = st.session_state.get('results')
                 professional_results = st.session_state.get('professional_results')
-                st.info(f"🔍 DEBUG: Results after AutoML: {results is not None}")
-                st.info(f"🔍 DEBUG: Professional Results: {professional_results is not None}")
                 
-                if results:
-                    st.info(f"🔍 DEBUG: Results keys: {list(results.keys())}")
-                    
                 # Check if we have any results (standard or professional)
                 has_results = (results and len(results) > 0) or professional_results
                 
@@ -5985,13 +7108,11 @@ and an overfitting gap of **{gap:.1%}** ({('✅ Good' if gap < 0.10 else '⚠️
                 
                 # Transition to results
                 st.session_state.app_stage = 'results'
-                st.info("🔍 DEBUG: Transitioning to results stage")
                 st.success("✅ AutoML completed successfully!")
                 st.rerun()
                 
         except Exception as e:
             st.error(f"❌ AutoML execution failed: {e}")
-            st.info(f"🔍 DEBUG: Exception in _execute_automl: {e}")
             logger.error(f"AutoML execution error: {e}")
 
     def render_configuration_dashboard(self):
@@ -6423,7 +7544,7 @@ Ensemble: {auto_config['optimization']['include_ensemble']}
             """.strip())
         
         # Apply recommendations button
-        if st.button("✨ Apply AI Recommendations", type="primary", use_container_width=True):
+        if st.button("✨ Apply AI Recommendations", type="primary", width='stretch'):
             # Apply ALL auto config recommendations to session state
             auto_config = analysis['auto_config']
             
@@ -6513,7 +7634,7 @@ Ensemble: {auto_config['optimization']['include_ensemble']}
                 })
             
             df = pd.DataFrame(model_df)
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width='stretch')
         
         # Smart model selection
         st.subheader("🧠 Smart Model Selection")
@@ -6525,7 +7646,7 @@ Ensemble: {auto_config['optimization']['include_ensemble']}
             col1, col2 = st.columns(2)
             
             with col1:
-                if st.button("🎯 Optimize for Accuracy", use_container_width=True):
+                if st.button("🎯 Optimize for Accuracy", width='stretch'):
                     if n_samples < 1000:
                         selected = ['LogisticRegression', 'SVM', 'RandomForest']
                     else:
@@ -6533,7 +7654,7 @@ Ensemble: {auto_config['optimization']['include_ensemble']}
                     st.info(f"Selected: {', '.join(selected)}")
             
             with col2:
-                if st.button("⚡ Optimize for Speed", use_container_width=True):
+                if st.button("⚡ Optimize for Speed", width='stretch'):
                     if n_samples < 10000:
                         selected = ['LogisticRegression', 'RandomForest']
                     else:
@@ -6880,7 +8001,7 @@ Ensemble: {auto_config['optimization']['include_ensemble']}
         st.subheader("🎯 Execute Pipeline")
         
         # Single unified run button that uses all user preferences
-        if st.button("🚀 **Execute AutoML with My Preferences**", type="primary", use_container_width=True, key="unified_run_1"):
+        if st.button("🚀 **Execute AutoML with My Preferences**", type="primary", width='stretch', key="unified_run_1"):
             if checks_passed >= 2:
                 st.session_state.show_configuration = False
                 
@@ -6983,9 +8104,7 @@ Ensemble: {auto_config['optimization']['include_ensemble']}
         st.subheader("🎯 Execute Pipeline")
         
         # Single unified execution button
-        if st.button("🚀 **Launch AutoML with All My Settings**", type="primary", use_container_width=True, key="unified_run_2"):
-            st.info("🔍 DEBUG: Unified AutoML button clicked!")
-            st.info(f"🔍 DEBUG: checks_passed = {checks_passed}")
+        if st.button("🚀 **Launch AutoML with All My Settings**", type="primary", width='stretch', key="unified_run_2"):
             if checks_passed >= 3:
                 st.session_state.show_configuration = False
                 
@@ -6993,7 +8112,6 @@ Ensemble: {auto_config['optimization']['include_ensemble']}
                 mode = self._determine_execution_mode()
                 
                 if mode == 'professional':
-                    st.info("🔍 DEBUG: Using Professional AutoML mode based on configuration")
                     opt_config = st.session_state.optimization_config
                     with st.spinner("🔥 Running Professional AutoML with your preferences..."):
                         self.run_professional_automl(
@@ -7003,7 +8121,7 @@ Ensemble: {auto_config['optimization']['include_ensemble']}
                             advanced_features=opt_config.get('advanced_features', [])
                         )
                 else:
-                    st.info("🔍 DEBUG: Using Standard AutoML mode")
+                    logger.debug("Using Standard AutoML mode")
                     with st.spinner("⚡ Running Standard AutoML with your settings..."):
                         self.run_automl()
                 st.rerun()
@@ -7011,7 +8129,7 @@ Ensemble: {auto_config['optimization']['include_ensemble']}
                 st.error("Please complete required configuration first")
         
         # Export configuration button (separate from run button)
-        if st.button("📊 Export Configuration", use_container_width=True, key="export_config"):
+        if st.button("📊 Export Configuration", width='stretch', key="export_config"):
                 config_export = {
                     'dataset_info': st.session_state.get('dataset_config', {}),
                     'optimization': st.session_state.optimization_config,
@@ -7095,7 +8213,7 @@ Ensemble: {auto_config['optimization']['include_ensemble']}
         if st.session_state.selected_columns:
             st.markdown("**Preview of selected columns:**")
             preview_data = data[st.session_state.selected_columns]
-            st.dataframe(preview_data.head(), use_container_width=True)
+            st.dataframe(preview_data.head(), width='stretch')
             
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -7123,7 +8241,7 @@ Ensemble: {auto_config['optimization']['include_ensemble']}
                 'Missing %': (missing_info.values / len(clean_data)) * 100
             }).sort_values('Missing Count', ascending=False)
             
-            st.dataframe(missing_df[missing_df['Missing Count'] > 0], use_container_width=True)
+            st.dataframe(missing_df[missing_df['Missing Count'] > 0], width='stretch')
             
             # Missing value handling options
             st.markdown("**Missing Value Strategy:**")
@@ -7222,7 +8340,7 @@ Ensemble: {auto_config['optimization']['include_ensemble']}
                     'Recommended': "One-Hot" if unique_count <= 10 else "Label/Target"
                 })
             
-            st.dataframe(pd.DataFrame(cardinality_info), use_container_width=True)
+            st.dataframe(pd.DataFrame(cardinality_info), width='stretch')
         
         # Advanced transformations
         st.markdown("**Advanced Transformations:**")
@@ -7378,7 +8496,7 @@ Ensemble: {auto_config['optimization']['include_ensemble']}
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("🔄 Apply Changes to Dataset", type="primary", use_container_width=True):
+            if st.button("🔄 Apply Changes to Dataset", type="primary", width='stretch'):
                 with st.spinner("Applying feature engineering changes..."):
                     try:
                         processed_data = self._apply_feature_engineering_changes(data)
@@ -7390,7 +8508,7 @@ Ensemble: {auto_config['optimization']['include_ensemble']}
                         st.error(f"❌ Error applying changes: {e}")
         
         with col2:
-            if st.button("📁 Export Modified Dataset", use_container_width=True):
+            if st.button("📁 Export Modified Dataset", width='stretch'):
                 try:
                     processed_data = self._apply_feature_engineering_changes(data)
                     csv = processed_data.to_csv(index=False)
@@ -7567,7 +8685,7 @@ Ensemble: {auto_config['optimization']['include_ensemble']}
         col1, col2, col3 = st.columns([1, 1, 2], gap="medium")
         
         with col1:
-            if st.button("🔄 Reset Dataset", help="Go back to original uploaded dataset", use_container_width=True):
+            if st.button("🔄 Reset Dataset", help="Go back to original uploaded dataset", width='stretch'):
                 # Reset to original state
                 self._reset_feature_engineering_settings()
                 st.session_state.show_feature_engineering = False
@@ -7577,7 +8695,7 @@ Ensemble: {auto_config['optimization']['include_ensemble']}
                 st.rerun()
         
         with col2:
-            if st.button("📁 Export Dataset", help="Download current dataset as CSV", use_container_width=True):
+            if st.button("📁 Export Dataset", help="Download current dataset as CSV", width='stretch'):
                 if st.session_state.data is not None:
                     csv = st.session_state.data.to_csv(index=False)
                     st.download_button(
@@ -7585,17 +8703,17 @@ Ensemble: {auto_config['optimization']['include_ensemble']}
                         data=csv,
                         file_name=f"prepared_dataset_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
                         mime="text/csv",
-                        use_container_width=True
+                        width='stretch'
                     )
         
         with col3:
             # Only allow proceeding if we have data
             if st.session_state.data is not None:
-                if st.button("➡️ **Continue to ML Configuration**", type="primary", use_container_width=True):
+                if st.button("➡️ **Continue to ML Configuration**", type="primary", width='stretch'):
                     st.session_state.app_stage = 'configure'
                     st.rerun()
             else:
-                st.button("➡️ Upload Dataset First", disabled=True, use_container_width=True, help="Please upload a dataset before proceeding")
+                st.button("➡️ Upload Dataset First", disabled=True, width='stretch', help="Please upload a dataset before proceeding")
 
 
 # Main entry point for Streamlit

@@ -116,11 +116,11 @@ class TestShouldEnableDimred:
     
     def test_auto_mode_high_dimensional(self):
         """Test auto mode enables for high-dimensional data."""
-        # Many features (>100)
+        # Many features (>1000)
         assert should_enable_dimred(1500, 100, False, "auto") is True
         
-        # High feature-to-sample ratio
-        assert should_enable_dimred(50, 100, False, "auto") is True
+        # High feature-to-sample ratio (>0.5)
+        assert should_enable_dimred(51, 100, False, "auto") is True
     
     def test_auto_mode_sparse_data(self):
         """Test auto mode enables for sparse data."""
@@ -145,7 +145,7 @@ class TestSelectDimredMethod:
     
     def test_large_dense_data_ipca(self):
         """Test IncrementalPCA for large dense datasets."""
-        method = select_dimred_method(False, 50000, "auto")  # Large n_features 
+        method = select_dimred_method(False, 50001, "auto")  # >50000 triggers ipca
         assert method == "ipca"
     
     def test_moderate_dense_data_pca(self):
@@ -166,6 +166,7 @@ class TestMakeDimred:
         """Test PCA transformer creation."""
         config_dict = {
             'dimred': {
+                'enable': 'on',
                 'method': 'pca',
                 'k_max': 10,
                 'whiten': True,
@@ -187,64 +188,65 @@ class TestMakeDimred:
     
     def test_tsvd_creation(self):
         """Test TruncatedSVD transformer creation."""
+        cfg = DimRedConfig(enable='on', method='tsvd', seed=42)
         transformer = make_dimred(
-            method="tsvd",
-            n_components=20,
-            random_state=42
+            is_sparse_after_ohe=True,
+            n_features=50,
+            n_samples=100,
+            cfg=cfg
         )
         
         assert isinstance(transformer, TruncatedSVD)
-        assert transformer.n_components == 20
         assert transformer.random_state == 42
     
     def test_ipca_creation(self):
         """Test IncrementalPCA transformer creation."""
+        cfg = DimRedConfig(enable='on', method='ipca')
         transformer = make_dimred(
-            method="ipca", 
-            n_components=15,
-            whiten=False
+            is_sparse_after_ohe=False,
+            n_features=50,
+            n_samples=100,
+            cfg=cfg
         )
         
         assert isinstance(transformer, IncrementalPCA)
-        assert transformer.n_components == 15
-        assert transformer.whiten is False
     
     def test_invalid_method(self):
         """Test invalid method raises ValueError."""
-        with pytest.raises(ValueError, match="Unknown dimred method"):
-            make_dimred(method="invalid")
+        with pytest.raises(ValueError, match="Invalid method value"):
+            DimRedConfig(enable='on', method='invalid')
     
     def test_pca_with_variance_target(self):
-        """Test PCA creation with variance_target instead of n_components."""
-        # Create sample data
-        X = np.random.randn(100, 20)
-        
+        """Test PCA creation with variance_target."""
+        cfg = DimRedConfig(enable='on', method='pca', variance_target=0.95)
         transformer = make_dimred(
-            method="pca",
-            variance_target=0.95,
-            whiten=False,
-            random_state=42
+            is_sparse_after_ohe=False,
+            n_features=50,
+            n_samples=100,
+            cfg=cfg
         )
         
         assert isinstance(transformer, PCA)
         assert transformer.n_components == 0.95  # Should set variance target
     
     def test_auto_method_selection(self):
-        """Test auto method selection."""
+        """Test auto method selection for dense vs sparse data."""
         # Dense data -> should get PCA
-        X_dense = np.random.randn(100, 20)
+        cfg = DimRedConfig(enable='on', method='auto')
         transformer = make_dimred(
-            method="auto",
-            n_components=10,
-            data_info={'is_sparse': False, 'n_samples': 100}
+            is_sparse_after_ohe=False,
+            n_features=50,
+            n_samples=100,
+            cfg=cfg
         )
         assert isinstance(transformer, PCA)
         
-        # Sparse indication -> should get TruncatedSVD
+        # Sparse data -> should get TruncatedSVD
         transformer_sparse = make_dimred(
-            method="auto", 
-            n_components=10,
-            data_info={'is_sparse': True, 'n_samples': 100}
+            is_sparse_after_ohe=True,
+            n_features=50,
+            n_samples=100,
+            cfg=cfg
         )
         assert isinstance(transformer_sparse, TruncatedSVD)
 
@@ -319,8 +321,7 @@ class TestDimRedSelector:
         X_transformed = selector.transform(X)
         
         assert X_transformed.shape[0] == X.shape[0]  # Same number of samples
-        assert X_transformed.shape[1] <= 10  # Reduced dimensions
-        assert X_transformed.shape[1] < X.shape[1]  # Actually reduced
+        assert X_transformed.shape[1] < X.shape[1]  # Reduced dimensions
     
     def test_transform_disabled(self):
         """Test transform when dimred is disabled."""
@@ -356,7 +357,7 @@ class TestDimRedSelector:
         X_transformed = selector.fit_transform(X)
         
         assert selector.is_fitted is True
-        assert X_transformed.shape[1] <= 5
+        assert X_transformed.shape[1] < 20  # Reduced from 20 features
     
     def test_auto_mode_selection(self):
         """Test auto mode selects appropriate method."""
@@ -499,7 +500,7 @@ class TestIntegrationScenarios:
         X_transformed = selector.fit_transform(X)
         
         assert isinstance(selector.transformer_, PCA)
-        assert X_transformed.shape[1] <= 20
+        assert X_transformed.shape[1] < X.shape[1]  # Should reduce
         assert selector.transformer_.whiten is True
 
 

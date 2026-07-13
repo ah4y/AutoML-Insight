@@ -1,11 +1,15 @@
 """Clustering evaluation metrics."""
 
 import numpy as np
+import logging
 from sklearn.metrics import (
     silhouette_score, davies_bouldin_score, calinski_harabasz_score
 )
 from sklearn.model_selection import ShuffleSplit
+from sklearn.exceptions import NotFittedError
 from typing import Dict, Any
+
+logger = logging.getLogger(__name__)
 
 
 class ClusteringEvaluator:
@@ -38,7 +42,8 @@ class ClusteringEvaluator:
         if labels is None:
             try:
                 labels = model.labels_ if hasattr(model, 'labels_') else model.predict(X)
-            except:
+            except (AttributeError, NotFittedError) as e:
+                logger.debug(f"Model not fitted, fitting now: {e}")
                 labels = model.fit_predict(X)
         
         results = {
@@ -55,19 +60,22 @@ class ClusteringEvaluator:
             try:
                 # Silhouette score
                 results['silhouette'] = silhouette_score(X_valid, valid_labels)
-            except:
+            except (ValueError, RuntimeError) as e:
+                logger.warning(f"Silhouette score calculation failed: {e}")
                 results['silhouette'] = -1
             
             try:
                 # Davies-Bouldin index (lower is better)
                 results['davies_bouldin'] = davies_bouldin_score(X_valid, valid_labels)
-            except:
+            except (ValueError, RuntimeError) as e:
+                logger.warning(f"Davies-Bouldin score calculation failed: {e}")
                 results['davies_bouldin'] = float('inf')
             
             try:
                 # Calinski-Harabasz index (higher is better)
                 results['calinski_harabasz'] = calinski_harabasz_score(X_valid, valid_labels)
-            except:
+            except (ValueError, RuntimeError) as e:
+                logger.warning(f"Calinski-Harabasz score calculation failed: {e}")
                 results['calinski_harabasz'] = 0
             
             # Cluster stability
@@ -136,7 +144,8 @@ class ClusteringEvaluator:
                         new_labels[valid_mask]
                     )
                     stability_scores.append(max(0, ari))
-            except:
+            except (ValueError, RuntimeError, AttributeError) as e:
+                logger.debug(f"Stability computation iteration failed: {e}")
                 continue
         
         return np.mean(stability_scores) if stability_scores else 0.0

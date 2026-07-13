@@ -2,7 +2,14 @@
 
 import streamlit as st
 import sys
+import codecs
 from pathlib import Path
+
+# Force UTF-8 encoding for standard output to prevent 'cp1252' errors on Windows
+if hasattr(sys.stdout, 'encoding') and sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8' and hasattr(sys.stdout, 'buffer'):
+    sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'replace')
+if hasattr(sys.stderr, 'encoding') and sys.stderr.encoding and sys.stderr.encoding.lower() != 'utf-8' and hasattr(sys.stderr, 'buffer'):
+    sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'replace')
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))

@@ -9,6 +9,14 @@ from sklearn.metrics import (
 from sklearn.preprocessing import label_binarize
 from typing import Dict, Any, List
 from utils.metrics_utils import compute_confidence_interval, mcnemar_test, wilcoxon_test
+from core.bias_variance_analyzer import BiasVarianceAnalyzer
+from core.advanced_metrics import AdvancedMetricsCalculator
+from core.statistical_tests import StatisticalModelComparator
+from core.background_analyzer import BackgroundAnalysisManager
+from utils.logging_utils import get_logger
+import streamlit as st
+
+logger = get_logger(__name__)
 
 
 class ClassificationEvaluator:
@@ -93,7 +101,8 @@ class ClassificationEvaluator:
                     if len(np.unique(y)) == 2:
                         brier = brier_score_loss(y_test, y_proba[:, 1])
                         all_scores['brier'].append(brier)
-                except:
+                except (AttributeError, ValueError) as e:
+                    logger.debug(f"Probabilistic metrics unavailable: {e}")
                     pass
                 
                 # Store predictions for statistical tests
@@ -150,7 +159,8 @@ class ClassificationEvaluator:
                 results2['predictions']
             )
             comparison['mcnemar_p_value'] = mcnemar_p
-        except:
+        except (ValueError, KeyError) as e:
+            logger.debug(f"McNemar test failed: {e}")
             pass
         
         # Wilcoxon test (for scores)
@@ -161,7 +171,8 @@ class ClassificationEvaluator:
                     np.array(results2['accuracy_scores'])
                 )
                 comparison['wilcoxon_p_value'] = wilcoxon_p
-            except:
+            except (ValueError, KeyError) as e:
+                logger.debug(f"Wilcoxon test failed: {e}")
                 pass
         
         return comparison
@@ -241,9 +252,6 @@ class ClassificationEvaluator:
         
         # Clone to avoid modifying original
         model = clone(model)
-        
-        import logging
-        logger = logging.getLogger(__name__)
         
         # AUTO-SELECT CV STRATEGY based on dataset size
         n_train = len(X_train)
@@ -347,6 +355,46 @@ class ClassificationEvaluator:
         test_accuracy = accuracy_score(y_test, y_test_pred)
         test_f1 = f1_score(y_test, y_test_pred, average='macro', zero_division=0)
         
+        # Compute extended metrics
+        advanced_calc = AdvancedMetricsCalculator()
+        extended_metrics = advanced_calc.compute_extended_metrics(
+            y_test, y_test_pred, 
+            y_proba=model.predict_proba(X_test) if hasattr(model, 'predict_proba') else None
+        )
+        
+        # Compute calibration and confidence metrics if probabilities available
+        if hasattr(model, 'predict_proba'):
+            y_proba = model.predict_proba(X_test)
+            calibration = advanced_calc.compute_calibration_metrics(y_test, y_proba)
+            confidence_analysis = advanced_calc.compute_prediction_confidence_analysis(
+                y_test, y_test_pred, y_proba
+            )
+        else:
+            calibration = None
+            confidence_analysis = None
+        
+        # Compute detailed confusion matrix analysis
+        confusion_analysis = advanced_calc.analyze_confusion_matrix_detailed(
+            y_test, y_test_pred, class_names=None
+        )
+        
+        # Schedule background analyses
+        if 'bg_manager' not in st.session_state:
+            st.session_state.bg_manager = BackgroundAnalysisManager()
+        
+        # Bias-variance (background) - reduced bootstrap for speed
+        bv_analyzer = BiasVarianceAnalyzer(n_bootstrap=30)
+        bv_future = st.session_state.bg_manager.schedule_analysis(
+            bv_analyzer.compute_bias_variance_decomposition,
+            model, X_train, y_train, X_test, y_test
+        )
+        
+        # Learning curves (background)
+        lc_future = st.session_state.bg_manager.schedule_analysis(
+            bv_analyzer.compute_learning_curves,
+            model, X_train, y_train
+        )
+        
         # Detect overfitting
         detector = OverfittingDetector()
         warnings = detector.detect_overfitting(
@@ -366,7 +414,7 @@ class ClassificationEvaluator:
         
         overfitting_report = detector.get_user_guidance()
         
-        # Store results with backward compatibility
+        # Store results with backward compatibility and new metrics
         results = {
             'model_name': model_name,
             'train_accuracy': train_accuracy,
@@ -383,6 +431,7 @@ class ClassificationEvaluator:
             'log_loss_mean': 0.0,
             
             # CV scores
+            'cv_scores': cv_scores_list,  # Add full list for statistical tests
             'cv_accuracy_mean': np.mean(cv_scores_list),
             'cv_accuracy_std': np.std(cv_scores_list),
             'cv_f1_mean': test_f1,  # Approximate
@@ -393,6 +442,20 @@ class ClassificationEvaluator:
             # Overfitting metrics
             'overfitting_gap': train_accuracy - test_accuracy,
             'overfitting_warnings': overfitting_report,
+            
+            # Extended metrics
+            **extended_metrics,  # Unpack all advanced metrics
+            
+            # Calibration and confidence
+            'calibration': calibration,
+            'confidence_analysis': confidence_analysis,
+            
+            # Detailed confusion matrix analysis
+            'confusion_analysis': confusion_analysis,
+            
+            # Background analysis futures
+            'bias_variance_future': bv_future,
+            'learning_curves_future': lc_future,
             
             # Model and predictions
             'trained_model': model,

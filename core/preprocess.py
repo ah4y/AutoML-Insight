@@ -334,7 +334,8 @@ class DataPreprocessor:
                     ohe = transformer.named_steps['onehot']
                     cat_features = ohe.get_feature_names_out(features)
                     feature_names.extend(cat_features)
-                except:
+                except (AttributeError, KeyError) as e:
+                    self.logger.debug(f"Could not get one-hot feature names: {e}. Using original names.")
                     feature_names.extend(features)
         
         return feature_names

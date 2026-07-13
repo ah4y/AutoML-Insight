@@ -18,6 +18,9 @@ import time
 import warnings
 warnings.filterwarnings('ignore')
 
+# Configure logger
+logger = logging.getLogger(__name__)
+
 # Configure Optuna logging
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
@@ -58,6 +61,7 @@ class AdvancedHyperparameterOptimizer:
         
         # Results storage
         self.optimization_results = {}
+        self.error_log = []  # Track all errors for debugging
         
     def _initialize_search_spaces(self):
         """Define intelligent search spaces for different model types."""
@@ -163,6 +167,14 @@ class AdvancedHyperparameterOptimizer:
         """
         model_name = model.__class__.__name__
         
+        # Validate data before optimization
+        if self.verbose:
+            print(f"\n Validating data for {model_name}...")
+            print(f"  X shape: {X.shape if hasattr(X, 'shape') else 'unknown'}")
+            if y is not None:
+                print(f"  y shape: {y.shape if hasattr(y, 'shape') else len(y)}")
+                print(f"  y unique values: {len(np.unique(y))}")
+        
         if model_name not in self.search_spaces:
             return self._basic_optimization_fallback(model, X, y, cv_folds)
         
@@ -211,10 +223,10 @@ class AdvancedHyperparameterOptimizer:
         pruned_trials = [t for t in study.trials if t.state == optuna.trial.TrialState.PRUNED]
         
         if self.verbose:
-            print(f"  📊 {model_name} Trial Summary:")
-            print(f"    ✅ Completed: {len(completed_trials)}")
-            print(f"    ❌ Failed: {len(failed_trials)}")
-            print(f"    ✂️ Pruned: {len(pruned_trials)}")
+            print(f"   {model_name} Trial Summary:")
+            print(f"     Completed: {len(completed_trials)}")
+            print(f"     Failed: {len(failed_trials)}")
+            print(f"    ✂ Pruned: {len(pruned_trials)}")
         
         if len(completed_trials) == 0:
             # If no trials completed, use the original model
@@ -432,6 +444,31 @@ class AdvancedHyperparameterOptimizer:
     def _evaluate_supervised_model(self, model, X, y, cv_folds, scoring_strategy):
         """Evaluate supervised model using cross-validation."""
         try:
+            # Validate input data
+            if X is None or y is None:
+                logger.error("X or y is None")
+                return -1000
+            
+            # Check for NaN values
+            import pandas as pd
+            if isinstance(X, pd.DataFrame):
+                nan_count = X.isnull().sum().sum()
+            else:
+                nan_count = np.isnan(X).sum() if hasattr(X, '__len__') else 0
+            
+            if nan_count > 0:
+                logger.error(f"X contains {nan_count} NaN values")
+                return -1000
+            
+            if isinstance(y, pd.Series):
+                y_nan_count = y.isnull().sum()
+            else:
+                y_nan_count = np.isnan(y).sum() if hasattr(y, '__len__') else 0
+            
+            if y_nan_count > 0:
+                logger.error(f"y contains {y_nan_count} NaN values")
+                return -1000
+            
             # Get scoring metric
             scoring_dict = self.scoring_strategies[self.task_type]
             scoring = scoring_dict.get(scoring_strategy, scoring_dict['balanced'])
@@ -442,12 +479,56 @@ class AdvancedHyperparameterOptimizer:
             else:
                 cv = KFold(n_splits=cv_folds, shuffle=True, random_state=self.random_state)
             
-            # Perform cross-validation
-            scores = cross_val_score(model, X, y, cv=cv, scoring=scoring, n_jobs=-1)
+            # Manual cross-validation to avoid Python 3.13/Windows joblib issues
+            scores = []
+            for train_idx, val_idx in cv.split(X, y if self.task_type == 'classification' else None):
+                # Split data
+                if isinstance(X, pd.DataFrame):
+                    X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
+                else:
+                    X_train, X_val = X[train_idx], X[val_idx]
+                
+                if isinstance(y, pd.Series):
+                    y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
+                else:
+                    y_train, y_val = y[train_idx], y[val_idx]
+                
+                # Train and evaluate
+                model.fit(X_train, y_train)
+                y_pred = model.predict(X_val)
+                
+                # Calculate score based on metric
+                if isinstance(scoring, str):
+                    if scoring == 'accuracy':
+                        score = accuracy_score(y_val, y_pred)
+                    elif scoring == 'f1_weighted':
+                        score = f1_score(y_val, y_pred, average='weighted', zero_division=0)
+                    elif scoring == 'neg_mean_squared_error':
+                        score = -mean_squared_error(y_val, y_pred)
+                    elif scoring == 'r2':
+                        score = r2_score(y_val, y_pred)
+                    else:
+                        # Default to accuracy for classification, r2 for regression
+                        if self.task_type == 'classification':
+                            score = accuracy_score(y_val, y_pred)
+                        else:
+                            score = r2_score(y_val, y_pred)
+                else:
+                    # scoring is a scorer object
+                    score = scoring._score_func(y_val, y_pred, **scoring._kwargs)
+                
+                scores.append(score)
             
             return np.mean(scores)
             
         except Exception as e:
+            error_msg = f"Error evaluating model {model.__class__.__name__}: {str(e)}"
+            logger.error(error_msg)
+            self.error_log.append(error_msg)
+            import traceback
+            tb = traceback.format_exc()
+            logger.error(tb)
+            self.error_log.append(tb)
             return -1000
     
     def _basic_optimization_fallback(self, model, X, y, cv_folds):
@@ -551,7 +632,7 @@ class AdvancedHyperparameterOptimizer:
             return "No optimization results available."
         
         summary = []
-        summary.append("🔧 Hyperparameter Optimization Summary")
+        summary.append(" Hyperparameter Optimization Summary")
         summary.append("=" * 50)
         
         total_improvement = 0
@@ -568,13 +649,13 @@ class AdvancedHyperparameterOptimizer:
                 best_model = model_name
             
             summary.append(f"\n{model_name}:")
-            summary.append(f"  ✅ Score: {results['baseline_score']:.4f} → {results['best_score']:.4f}")
-            summary.append(f"  📈 Improvement: +{improvement:.4f} ({improvement_percent:+.1f}%)")
-            summary.append(f"  ⏱️  Time: {results['optimization_time']:.1f}s")
-            summary.append(f"  🔍 Trials: {results['n_trials']}")
+            summary.append(f"   Score: {results['baseline_score']:.4f} → {results['best_score']:.4f}")
+            summary.append(f"   Improvement: +{improvement:.4f} ({improvement_percent:+.1f}%)")
+            summary.append(f"    Time: {results['optimization_time']:.1f}s")
+            summary.append(f"   Trials: {results['n_trials']}")
         
-        summary.append(f"\n🏆 Best Overall Model: {best_model} (Score: {best_score:.4f})")
-        summary.append(f"📊 Total Improvement: +{total_improvement:.4f}")
+        summary.append(f"\n Best Overall Model: {best_model} (Score: {best_score:.4f})")
+        summary.append(f" Total Improvement: +{total_improvement:.4f}")
         
         return "\n".join(summary)
 
@@ -614,8 +695,8 @@ class AutoMLPipeline:
         import signal
         import time
         
-        print("🚀 Starting Advanced AutoML Pipeline...")
-        print(f"📊 Dataset: {X.shape[0]} samples, {X.shape[1]} features")
+        print(" Starting Advanced AutoML Pipeline...")
+        print(f" Dataset: {X.shape[0]} samples, {X.shape[1]} features")
         
         # Set up timeout protection (maximum 30 minutes for entire pipeline)
         total_timeout = max(self.optimization_time_minutes * 2, 30) * 60  # At least 30 minutes
@@ -626,7 +707,7 @@ class AutoMLPipeline:
             model_candidates = self._get_default_models()
         
         # Individual model optimization
-        print(f"\n🔧 Optimizing {len(model_candidates)} models...")
+        print(f"\n Optimizing {len(model_candidates)} models...")
         individual_results = {}
         
         for i, (name, model) in enumerate(model_candidates):
@@ -635,11 +716,11 @@ class AutoMLPipeline:
             remaining_time = total_timeout - elapsed
             
             if remaining_time <= 0:
-                print(f"\n⏰ Pipeline timeout reached. Stopping optimization.")
+                print(f"\n Pipeline timeout reached. Stopping optimization.")
                 break
                 
-            print(f"\n  ⚙️ Optimizing {name} ({i+1}/{len(model_candidates)})...")
-            print(f"  ⏱️ Time remaining: {remaining_time/60:.1f} minutes")
+            print(f"\n   Optimizing {name} ({i+1}/{len(model_candidates)})...")
+            print(f"   Time remaining: {remaining_time/60:.1f} minutes")
             
             try:
                 # Set per-model timeout to remaining time or original limit, whichever is smaller
@@ -655,10 +736,10 @@ class AutoMLPipeline:
                 # Restore original timeout
                 self.optimizer.optimization_time_minutes = original_timeout
                 
-                print(f"  ✅ {name} completed in {result.get('optimization_time', 0):.1f}s")
+                print(f"   {name} completed in {result.get('optimization_time', 0):.1f}s")
                 
             except Exception as e:
-                print(f"  ❌ {name} optimization failed: {str(e)}")
+                print(f"   {name} optimization failed: {str(e)}")
                 # Store failed result
                 individual_results[name] = {
                     'model': model,
@@ -678,15 +759,15 @@ class AutoMLPipeline:
             remaining_time = total_timeout - elapsed
             
             if remaining_time > 60:  # Only try ensemble if we have at least 1 minute left
-                print(f"\n🎭 Creating ensemble models...")
+                print(f"\n Creating ensemble models...")
                 try:
                     ensemble_results = self.optimizer.optimize_ensemble(model_candidates, X, y)
-                    print(f"  ✅ Ensemble optimization completed")
+                    print(f"   Ensemble optimization completed")
                 except Exception as e:
-                    print(f"  ❌ Ensemble optimization failed: {str(e)}")
+                    print(f"   Ensemble optimization failed: {str(e)}")
                     ensemble_results = None
             else:
-                print(f"\n⏰ Skipping ensemble optimization - insufficient time remaining")
+                print(f"\n Skipping ensemble optimization - insufficient time remaining")
         
         # Compile final results
         optimization_summary = self.optimizer.get_optimization_summary()
@@ -709,11 +790,11 @@ class AutoMLPipeline:
             }
         }
         
-        print(f"\n✅ Advanced AutoML Pipeline Complete!")
-        print(f"⏱️ Total time: {total_time:.1f}s ({total_time/60:.1f} minutes)")
-        print(f"🎯 Successful models: {len(successful_models)}/{len(model_candidates)}")
+        print(f"\n Advanced AutoML Pipeline Complete!")
+        print(f" Total time: {total_time:.1f}s ({total_time/60:.1f} minutes)")
+        print(f" Successful models: {len(successful_models)}/{len(model_candidates)}")
         if ensemble_results:
-            print(f"🎭 Ensemble created: Yes")
+            print(f" Ensemble created: Yes")
         print(optimization_summary)
         
         return self.pipeline_results

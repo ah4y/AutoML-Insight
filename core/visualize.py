@@ -17,6 +17,9 @@ except ImportError:
 from sklearn.preprocessing import label_binarize
 from typing import Dict, List, Optional, Any
 import warnings
+from utils.logging_utils import get_logger
+
+logger = get_logger(__name__)
 warnings.filterwarnings('ignore')
 
 
@@ -248,7 +251,8 @@ class Visualizer:
                         name=model_name,
                         line=dict(width=2)
                     ))
-            except:
+            except (ValueError, AttributeError, IndexError) as e:
+                logger.warning(f"Failed to compute calibration curve for {model_name}: {e}")
                 continue
         
         # Perfect calibration line
@@ -307,8 +311,8 @@ class Visualizer:
                     # If that fails, try indexing
                     try:
                         importance_dict_clean[k] = float(v[0])
-                    except:
-                        print(f"WARNING: Could not convert {k}: {type(v)} - setting to 0.0")
+                    except (ValueError, TypeError, IndexError, AttributeError) as e:
+                        logger.warning(f"Could not convert feature importance for {k}: {type(v)} - {e}. Setting to 0.0")
                         importance_dict_clean[k] = 0.0
         
         # Sort and select top N
@@ -542,24 +546,29 @@ class Visualizer:
         
         # Mark selected components if provided
         if n_components_selected is not None and n_components_selected > 0:
-            # Mark on individual plot
-            fig.add_vline(
-                x=n_components_selected,
-                line_dash="dash",
-                line_color="red",
-                annotation_text=f"Selected: {n_components_selected}",
-                row=1, col=1
-            )
+            # Ensure n_components_selected is an integer
+            n_comp_int = int(n_components_selected) if not isinstance(n_components_selected, int) else n_components_selected
             
-            # Mark on cumulative plot
-            selected_variance = cumulative_variance[n_components_selected - 1]
-            fig.add_hline(
-                y=selected_variance,
-                line_dash="dash",
-                line_color="red",
-                annotation_text=f"{selected_variance:.1%} variance",
-                row=1, col=2
-            )
+            # Ensure it's within valid range
+            if n_comp_int > 0 and n_comp_int <= len(cumulative_variance):
+                # Mark on individual plot
+                fig.add_vline(
+                    x=n_comp_int,
+                    line_dash="dash",
+                    line_color="red",
+                    annotation_text=f"Selected: {n_comp_int}",
+                    row=1, col=1
+                )
+                
+                # Mark on cumulative plot
+                selected_variance = cumulative_variance[n_comp_int - 1]
+                fig.add_hline(
+                    y=selected_variance,
+                    line_dash="dash",
+                    line_color="red",
+                    annotation_text=f"{selected_variance:.1%} variance",
+                    row=1, col=2
+                )
         
         # Update layout
         fig.update_xaxes(title_text="Principal Component", row=1, col=1)
@@ -596,16 +605,27 @@ class Visualizer:
             Plotly figure with 2D scatter plot
         """
         # Prepare axis labels
-        if explained_variance_ratio is not None and len(explained_variance_ratio) >= 2:
-            x_var = float(explained_variance_ratio[0]) * 100
-            y_var = float(explained_variance_ratio[1]) * 100
-            x_label = f'PC1 ({x_var:.1f}% variance)'
-            y_label = f'PC2 ({y_var:.1f}% variance)'
+        if explained_variance_ratio is not None:
+            # Ensure it's a numpy array
+            evr = np.asarray(explained_variance_ratio)
+            if evr.ndim > 0 and len(evr) >= 2:
+                x_var = float(evr[0]) * 100
+                y_var = float(evr[1]) * 100
+                x_label = f'PC1 ({x_var:.1f}% variance)'
+                y_label = f'PC2 ({y_var:.1f}% variance)'
+            else:
+                x_label = 'PC1'
+                y_label = 'PC2'
         else:
             x_label = 'PC1'
             y_label = 'PC2'
         
         # Create DataFrame for plotting
+        # Ensure X_pca is a proper numpy array
+        X_pca = np.asarray(X_pca)
+        if X_pca.ndim == 1:
+            X_pca = X_pca.reshape(-1, 1)
+            
         plot_data = {
             'PC1': X_pca[:, 0],
             'PC2': X_pca[:, 1] if X_pca.shape[1] > 1 else np.zeros(len(X_pca))

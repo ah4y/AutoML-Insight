@@ -64,3 +64,36 @@ def setup_logger(
         logger.addHandler(console_handler)
     
     return logger
+
+
+def get_logger(name: str = None) -> logging.Logger:
+    """
+    Get or create a logger instance.
+    
+    This is a convenience function that returns a logger with the module name.
+    If the logger doesn't have handlers, it sets up basic logging.
+    
+    Args:
+        name: Logger name (typically __name__ from calling module)
+        
+    Returns:
+        Logger instance
+    """
+    if name is None:
+        name = "automl_insight"
+    
+    logger = logging.getLogger(name)
+    
+    # If logger has no handlers, set up basic configuration
+    if not logger.handlers:
+        logger.setLevel(logging.INFO)
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setLevel(logging.INFO)
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+    
+    return logger

@@ -6,6 +6,9 @@ from scipy import stats
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import LabelEncoder
 from typing import Dict, Any
+from utils.logging_utils import get_logger
+
+logger = get_logger(__name__)
 
 
 class DataProfiler:
@@ -71,13 +74,25 @@ class DataProfiler:
             # PCA-based metrics
             try:
                 if X_numeric.shape[0] > X_numeric.shape[1]:
-                    pca = PCA(n_components=min(10, X_numeric.shape[1]))
-                    pca.fit(X_numeric)
+                    # Handle missing values before PCA
+                    from sklearn.impute import SimpleImputer
+                    X_numeric_for_pca = X_numeric.copy()
+                    if X_numeric_for_pca.isnull().any().any():
+                        imputer = SimpleImputer(strategy='median')
+                        X_numeric_for_pca = pd.DataFrame(
+                            imputer.fit_transform(X_numeric_for_pca),
+                            columns=X_numeric_for_pca.columns,
+                            index=X_numeric_for_pca.index
+                        )
+                    
+                    pca = PCA(n_components=min(10, X_numeric_for_pca.shape[1]))
+                    pca.fit(X_numeric_for_pca)
                     profile['pca_95_components'] = np.sum(
                         np.cumsum(pca.explained_variance_ratio_) < 0.95
                     ) + 1
                     profile['pca_first_pc'] = pca.explained_variance_ratio_[0]
-            except:
+            except (ValueError, np.linalg.LinAlgError) as e:
+                logger.warning(f"PCA calculation failed: {e}. Using fallback values.")
                 profile['pca_95_components'] = X.shape[1]
                 profile['pca_first_pc'] = 1.0 / X.shape[1]
         else:
@@ -146,7 +161,8 @@ class DataProfiler:
             lr = LogisticRegression(max_iter=100, random_state=42)
             scores = cross_val_score(lr, X, y_encoded, cv=3, scoring='accuracy')
             return scores.mean()
-        except:
+        except Exception as e:
+            logger.warning(f"Quick classification test failed: {e}. Returning default score 0.5")
             return 0.5
     
     def get_profile_vector(self) -> np.ndarray:
