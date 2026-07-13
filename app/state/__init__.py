@@ -2,4 +2,4 @@
 
 from .session_manager import SessionStateManager
 
-__all__ = ['SessionStateManager']
+__all__ = ["SessionStateManager"]

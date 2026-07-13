@@ -1,77 +1,73 @@
 """Remote Jupyter Server Client for Cloud Execution."""
 
-import requests
-import json
-import time
-import os
-from typing import Optional, Dict, Any, List
-from pathlib import Path
-import threading
-from queue import Queue
 import base64
-import tempfile
+import json
+import logging
+from typing import Any, Dict, List, Optional
+
+import requests
+
+logger = logging.getLogger(__name__)
 
 
 class JupyterServerClient:
     """Client to connect and execute code on remote Jupyter servers."""
-    
+
     def __init__(self, base_url: str, token: Optional[str] = None):
         """
         Initialize Jupyter client.
-        
+
         Args:
             base_url: Base URL of Jupyter server (e.g., http://localhost:8888)
             token: Authentication token (if required)
         """
-        self.base_url = base_url.rstrip('/')
+        self.base_url = base_url.rstrip("/")
         self.token = token
         self.session = requests.Session()
         self.session.timeout = 30
-        
+
         # Set up authentication - add token to session headers and params
         if token:
-            self.session.params = {'token': token}
+            self.session.params = {"token": token}
             # Also try Authorization header as backup
-            self.session.headers.update({
-                'Authorization': f'token {token}'
-            })
-    
+            self.session.headers.update({"Authorization": f"token {token}"})
+
     def test_connection(self) -> bool:
         """Test if server is reachable."""
         try:
             print(f"Testing connection to: {self.base_url}")
             print(f"Token provided: {'Yes' if self.token else 'No'}")
-            
+
             # Try to connect to the API endpoint
             # If token is provided, it's already in session params
             response = self.session.get(f"{self.base_url}/api", timeout=10)
-            
+
             print(f"Response status: {response.status_code}")
             if response.status_code != 200:
                 print(f"Response content: {response.text[:500]}")
-            
+
             # Check if it's a valid Jupyter response
             if response.status_code == 200:
                 try:
                     data = response.json()
                     # Jupyter API should return a dict with 'version' key
-                    if 'version' in data or isinstance(data, dict):
+                    if "version" in data or isinstance(data, dict):
                         print("✅ Connection successful!")
                         return True
-                except:
-                    pass
-            
+                except (ValueError, json.JSONDecodeError) as e:
+                    logger.debug(f"Response from {self.base_url}/api was not valid JSON: {e}")
+
             # If API endpoint doesn't work, try root endpoint
             response = self.session.get(self.base_url, timeout=10)
             print(f"Root endpoint status: {response.status_code}")
-            
+
             # Accept 200 or 302 (redirect) as success
             if response.status_code in [200, 302]:
                 print("✅ Connection successful (root endpoint)!")
                 return True
-            
+
             return False
-            
+
         except requests.exceptions.ConnectionError as e:
             print(f"❌ Connection refused: {e}")
             return False
@@ -81,7 +77,7 @@ class JupyterServerClient:
         except Exception as e:
             print(f"❌ Connection test failed: {type(e).__name__}: {e}")
             return False
-    
+
     def get_server_info(self) -> Dict[str, Any]:
         """Get server information."""
         try:
@@ -89,44 +85,41 @@ class JupyterServerClient:
             return response.json()
         except Exception as e:
             return {"error": str(e)}
-    
+
     def execute_code_via_file(self, code: str, timeout: int = 300) -> Dict[str, Any]:
         """
         Execute Python code by uploading a script and triggering execution.
         Simple approach: Upload dataset, upload script, wait for manual execution or use local execution.
-        
+
         Args:
             code: Python code to execute
             timeout: Maximum execution time in seconds
-            
+
         Returns:
             Dictionary with execution results
         """
         try:
             import uuid
+
             script_id = str(uuid.uuid4())[:8]
-            output_name = f"automl_output_{script_id}.json"
-            
+            f"automl_output_{script_id}.json"
+
             # For remote execution, we have a challenge: Jupyter REST API doesn't support code execution
             # The proper way requires WebSocket connection to kernel channels
             # For now, let's use a workaround: execute locally and just log that it would run remotely
-            
-            print(f"⚠️ Note: Direct remote execution via REST API is limited.")
-            print(f"Executing code locally instead...")
-            
+
+            print("⚠️ Note: Direct remote execution via REST API is limited.")
+            print("Executing code locally instead...")
+
             # Execute locally
-            result = {
-                "success": False,
-                "outputs": [],
-                "errors": []
-            }
-            
+            result = {"success": False, "outputs": [], "errors": []}
+
             import io
-            from contextlib import redirect_stdout, redirect_stderr
-            
+            from contextlib import redirect_stderr, redirect_stdout
+
             stdout_buf = io.StringIO()
             stderr_buf = io.StringIO()
-            
+
             try:
                 with redirect_stdout(stdout_buf), redirect_stderr(stderr_buf):
                     exec(code)
@@ -138,68 +131,60 @@ class JupyterServerClient:
                 result["success"] = False
                 result["errors"] = [str(e)]
                 import traceback
+
                 result["errors"].append(traceback.format_exc())
-            
+
             return result
-            
+
         except Exception as e:
             import traceback
+
             return {"success": False, "error": str(e), "traceback": traceback.format_exc()}
-    
+
     def _delete_file(self, filename: str):
-        """Delete a file from Jupyter server."""
+        """Delete a file from Jupyter server (best-effort cleanup)."""
         try:
-            self.session.delete(
-                f"{self.base_url}/api/contents/{filename}",
-                timeout=5
-            )
-        except:
-            pass
-    
+            self.session.delete(f"{self.base_url}/api/contents/{filename}", timeout=5)
+        except requests.RequestException as e:
+            logger.debug(f"Failed to clean up remote file '{filename}': {e}")
+
     def upload_file(self, local_path: str, remote_path: str) -> bool:
         """Upload file to Jupyter server."""
         try:
-            with open(local_path, 'rb') as f:
+            with open(local_path, "rb") as f:
                 content = f.read()
-            
+
             # Convert to base64
-            content_b64 = base64.b64encode(content).decode('utf-8')
-            
+            content_b64 = base64.b64encode(content).decode("utf-8")
+
             # Upload via Contents API
             response = self.session.put(
                 f"{self.base_url}/api/contents/{remote_path}",
-                json={
-                    "type": "file",
-                    "format": "base64",
-                    "content": content_b64
-                },
-                timeout=60
+                json={"type": "file", "format": "base64", "content": content_b64},
+                timeout=60,
             )
             return response.status_code in [200, 201]
         except Exception:
             return False
-    
+
     def download_file(self, remote_path: str, local_path: str) -> bool:
         """Download file from Jupyter server."""
         try:
-            response = self.session.get(
-                f"{self.base_url}/api/contents/{remote_path}",
-                timeout=60
-            )
+            response = self.session.get(f"{self.base_url}/api/contents/{remote_path}", timeout=60)
             if response.status_code == 200:
                 data = response.json()
-                content = data.get('content', '')
-                
+                content = data.get("content", "")
+
                 # Decode base64
                 file_bytes = base64.b64decode(content)
-                
-                with open(local_path, 'wb') as f:
+
+                with open(local_path, "wb") as f:
                     f.write(file_bytes)
                 return True
             return False
         except Exception:
             return False
-    
+
     def install_packages(self, packages: List[str]) -> bool:
         """Install Python packages on remote server."""
         code = f"""
@@ -219,24 +204,22 @@ else:
     print(f"Installation errors: {{result.stderr}}")
 """
         result = self.execute_code_via_file(code, timeout=180)
-        return result.get('success', False)
-    
+        return result.get("success", False)
+
     def shutdown_kernel(self):
         """Shutdown - no-op for file-based execution."""
-        pass
-    
+
     def __del__(self):
         """Cleanup on deletion."""
-        pass
 
 
 class ColabServerSetup:
     """Helper to set up Google Colab with ngrok tunnel."""
-    
+
     @staticmethod
     def get_setup_code(ngrok_token: str) -> str:
         """Get code to run in Colab to expose Jupyter server."""
-        return f'''# Run this code in Google Colab to expose Jupyter server
+        return f"""# Run this code in Google Colab to expose Jupyter server
 !pip install -q pyngrok
 
 # Configure ngrok
@@ -275,7 +258,7 @@ print(f"Public URL: {{public_url}}")
 print("=" * 60)
 print("Copy the URL above and paste it in AutoML-Insight!")
 print("=" * 60)
-'''
+"""
 
     @staticmethod
     def get_colab_url() -> str:
@@ -285,11 +268,11 @@ print("=" * 60)
 
 class RemoteExecutor:
     """High-level executor for remote training."""
-    
+
     def __init__(self, jupyter_client: JupyterServerClient):
         self.client = jupyter_client
         self.logs = []
-    
+
     def execute_automl(
         self,
         data_path: str,
@@ -297,11 +280,11 @@ class RemoteExecutor:
         task_type: str,
         random_seed: int = 42,
         max_features: int = 1000,
-        progress_callback=None
+        progress_callback=None,
     ) -> Dict[str, Any]:
         """
         Execute AutoML pipeline on remote server.
-        
+
         Args:
             data_path: Path to local CSV file
             target_col: Target column name (for classification)
@@ -309,74 +292,62 @@ class RemoteExecutor:
             random_seed: Random seed for reproducibility
             max_features: Maximum features to use
             progress_callback: Function to call with progress updates
-            
+
         Returns:
             Dictionary with training results
         """
+
         def log(msg: str, progress: int = None):
             self.logs.append(msg)
             if progress_callback:
                 progress_callback(msg, progress)
-        
+
         try:
             log("� Connected to Jupyter server", 10)
             log("💡 Executing training locally (Jupyter REST API limitation)", 15)
             log("📊 Loading dataset...", 20)
-            
+
             # Since we're executing locally anyway, skip the upload
             # Just update the training code to use the local path
-            
+
             log("🤖 Starting model training...", 30)
             training_code = self._generate_training_code_local(
                 data_path, target_col, task_type, random_seed, max_features
             )
-            
+
             result = self.client.execute_code_via_file(training_code, timeout=600)
-            
-            if not result.get('success', False):
-                error_msg = result.get('error', 'Unknown error')
-                errors = result.get('errors', [])
-                full_error = f"{error_msg}\n" + '\n'.join(errors) if errors else error_msg
+
+            if not result.get("success", False):
+                error_msg = result.get("error", "Unknown error")
+                errors = result.get("errors", [])
+                full_error = f"{error_msg}\n" + "\n".join(errors) if errors else error_msg
                 log(f"❌ Error: {full_error}", 100)
                 return {"success": False, "error": full_error, "logs": self.logs}
-            
+
             log("✅ Training completed!", 90)
-            
+
             # Parse results from output
-            outputs = result.get('outputs', [])
+            outputs = result.get("outputs", [])
             if outputs and outputs[0]:
                 log("📊 Processing results...", 95)
                 # Results should be printed in the output
                 # For now, return the raw output
                 log("✅ Execution successful!", 100)
-                return {
-                    "success": True,
-                    "output": outputs[0],
-                    "logs": self.logs
-                }
+                return {"success": True, "output": outputs[0], "logs": self.logs}
             else:
                 log("⚠️ No output generated", 100)
-                return {
-                    "success": True,
-                    "output": "Training completed but no output generated",
-                    "logs": self.logs
-                }
-            
+                return {"success": True, "output": "Training completed but no output generated", "logs": self.logs}
+
         except Exception as e:
             log(f"❌ Exception: {str(e)}", 100)
             return {"success": False, "error": str(e), "logs": self.logs}
-    
+
     def _generate_training_code_local(
-        self,
-        data_path: str,
-        target_col: Optional[str],
-        task_type: str,
-        random_seed: int,
-        max_features: int
+        self, data_path: str, target_col: Optional[str], task_type: str, random_seed: int, max_features: int
     ) -> str:
         """Generate training code that uses local data path."""
-        
-        code = f'''
+
+        code = f"""
 import pandas as pd
 import numpy as np
 import json
@@ -458,16 +429,16 @@ for name, model in models.items():
     try:
         # Train
         model.fit(X_train, y_train)
-        
+
         # Predict
         y_pred = model.predict(X_test)
-        
+
         # Metrics
         accuracy = accuracy_score(y_test, y_pred)
         precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
         recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)
         f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
-        
+
         results.append({{
             'model': name,
             'accuracy': float(accuracy),
@@ -475,9 +446,9 @@ for name, model in models.items():
             'recall': float(recall),
             'f1_score': float(f1)
         }})
-        
+
         print(f"  ✅ {{name}}: Accuracy={{accuracy:.4f}}, F1={{f1:.4f}}")
-        
+
     except Exception as e:
         print(f"  ❌ {{name}}: Failed - {{str(e)}}")
         results.append({{
@@ -506,5 +477,5 @@ with open('automl_results.json', 'w') as f:
 
 print("✅ Results saved to automl_results.json")
 print("=" * 60)
-'''
+"""
         return code

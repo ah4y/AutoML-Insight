@@ -1,17 +1,19 @@
 """Comprehensive Health Check for AutoML-Insight."""
-import sys
-import os
+
 import io
+import os
+import sys
 import traceback
 
 # Force UTF-8 output to avoid Windows cp1252 encoding errors
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 # Ensure project root is on path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 results = {"pass": [], "fail": [], "warn": []}
+
 
 def check(name, fn):
     try:
@@ -22,6 +24,7 @@ def check(name, fn):
         results["fail"].append((name, str(e)))
         print(f"  [FAIL] {name}: {e}")
 
+
 def warn_check(name, fn):
     try:
         fn()
@@ -30,6 +33,7 @@ def warn_check(name, fn):
     except Exception as e:
         results["warn"].append((name, str(e)))
         print(f"  [WARN] {name}: {e}")
+
 
 print("=" * 70)
 print("  AutoML-Insight Health Check")
@@ -113,139 +117,201 @@ print("\n--- 7. App Module Imports ---")
 
 check("app.main", lambda: __import__("app.main"))
 check("app.report_builder", lambda: __import__("app.report_builder"))
+
+
 # ui_dashboard is huge (438KB), just check it's parseable
 def check_ui_dashboard():
     import ast
+
     with open("app/ui_dashboard.py", "r", encoding="utf-8") as f:
         ast.parse(f.read())
+
+
 check("app.ui_dashboard (syntax)", check_ui_dashboard)
 
 # -- 3. CONFIG CHECKS --
 print("\n--- 8. Configuration Files ---")
 
+
 def check_config():
     import yaml
+
     with open("app/config.yaml", "r") as f:
         cfg = yaml.safe_load(f)
     assert "preprocessing" in cfg, "Missing preprocessing section"
     assert "training" in cfg, "Missing training section"
     assert "tuning" in cfg, "Missing tuning section"
+
+
 check("app/config.yaml valid", check_config)
+
 
 def check_root_config():
     import yaml
+
     with open("config.yaml", "r") as f:
         cfg = yaml.safe_load(f)
     assert cfg is not None, "Root config.yaml is empty"
+
+
 check("config.yaml (root) valid", check_root_config)
+
 
 def check_streamlit_config():
     import tomllib
+
     with open(".streamlit/config.toml", "rb") as f:
         cfg = tomllib.load(f)
     assert "theme" in cfg, "Missing theme section"
+
+
 check(".streamlit/config.toml valid", check_streamlit_config)
 
 # -- 4. ENV CHECKS --
 print("\n--- 9. Environment Variables (.env) ---")
 
+
 def check_env():
     from dotenv import load_dotenv
+
     load_dotenv()
     keys = ["GROQ_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"]
     missing = [k for k in keys if not os.environ.get(k)]
     if missing:
         raise Exception(f"Missing keys: {', '.join(missing)}")
+
+
 warn_check(".env API keys present", check_env)
 
 # -- 5. FUNCTIONAL CHECKS --
 print("\n--- 10. Functional Integration Checks ---")
 
+
 def check_data_profiling():
     import pandas as pd
+
     from core.data_profile import DataProfiler
-    df = pd.DataFrame({"a": [1,2,3,4,5], "b": [10,20,30,40,50], "c": ["x","y","x","y","x"]})
+
+    df = pd.DataFrame({"a": [1, 2, 3, 4, 5], "b": [10, 20, 30, 40, 50], "c": ["x", "y", "x", "y", "x"]})
     profiler = DataProfiler()
     profile = profiler.profile_dataset(df)
     assert profile is not None, "Profiler returned None"
+
+
 check("DataProfiler.profile_dataset()", check_data_profiling)
 
+
 def check_preprocessing():
-    import pandas as pd
     import numpy as np
+    import pandas as pd
+
     from core.preprocess import DataPreprocessor
-    df = pd.DataFrame({
-        "num1": [1, 2, np.nan, 4, 5],
-        "num2": [10, 20, 30, 40, 50],
-        "cat1": ["a", "b", "a", "b", "a"],
-        "target": [0, 1, 0, 1, 0]
-    })
+
+    df = pd.DataFrame(
+        {
+            "num1": [1, 2, np.nan, 4, 5],
+            "num2": [10, 20, 30, 40, 50],
+            "cat1": ["a", "b", "a", "b", "a"],
+            "target": [0, 1, 0, 1, 0],
+        }
+    )
     p = DataPreprocessor()
-    X_t, y_t = p.fit_transform(df.drop(columns=['target']), df['target'])
+    X_t, y_t = p.fit_transform(df.drop(columns=["target"]), df["target"])
     assert X_t is not None, "DataPreprocessor returned None"
+
+
 check("DataPreprocessor.fit_transform()", check_preprocessing)
+
 
 def check_supervised_models():
     from core.models_supervised import get_supervised_models
+
     models = get_supervised_models()
     assert len(models) > 0, "No supervised models returned"
+
+
 check("get_supervised_models()", check_supervised_models)
+
 
 def check_clustering_models():
     from core.models_clustering import get_clustering_models
+
     models = get_clustering_models()
     assert len(models) > 0, "No clustering models returned"
+
+
 check("get_clustering_models()", check_clustering_models)
+
 
 def check_seed_utils():
     from utils.seed_utils import set_seed
+
     set_seed(42)
+
+
 check("set_seed()", check_seed_utils)
+
 
 def check_logging():
     from utils.logging_utils import setup_logger
+
     logger = setup_logger("health_check_test")
     assert logger is not None
+
+
 check("setup_logger()", check_logging)
+
 
 def check_confidence_interval():
     import numpy as np
+
     from utils.metrics_utils import compute_confidence_interval
+
     scores = np.array([0.8, 0.85, 0.82, 0.88, 0.84])
     result = compute_confidence_interval(scores)
     assert result is not None
+
+
 check("compute_confidence_interval()", check_confidence_interval)
 
+
 def check_train_evaluate_pipeline():
-    import pandas as pd
     import numpy as np
+    import pandas as pd
     from sklearn.datasets import make_classification
-    from core.preprocess import DataPreprocessor
+
     from core.models_supervised import get_supervised_models
-    
+    from core.preprocess import DataPreprocessor
+
     X, y = make_classification(n_samples=100, n_features=10, random_state=42)
     df_X = pd.DataFrame(X, columns=[f"f{i}" for i in range(10)])
     y_series = pd.Series(y)
-    
+
     p = DataPreprocessor()
     X_proc, y_proc = p.fit_transform(df_X, y_series)
-    
+
     models = get_supervised_models()
     first_model_name = list(models.keys())[0]
     model = models[first_model_name]
-    
+
     model.fit(X_proc[:80], y_proc[:80])
     score = model.score(X_proc[80:], y_proc[80:])
     assert 0 <= score <= 1, f"Invalid score: {score}"
+
+
 check("Train->Evaluate pipeline", check_train_evaluate_pipeline)
 
 # -- 6. REPORT BUILDER CHECK --
 print("\n--- 11. Report Builder ---")
 
+
 def check_report_builder():
     from app.report_builder import ReportBuilder
+
     rb = ReportBuilder.__new__(ReportBuilder)
-    assert hasattr(rb, '__class__'), "ReportBuilder class not importable"
+    assert hasattr(rb, "__class__"), "ReportBuilder class not importable"
+
+
 warn_check("ReportBuilder importable", check_report_builder)
 
 # -- SUMMARY --
