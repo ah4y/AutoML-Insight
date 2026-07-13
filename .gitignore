@@ -51,6 +51,14 @@ results/reports/*.pdf
 # data/*.csv
 # data/*.xlsx
 
+# Generated run/demo artifacts (produced at runtime, not source)
+/automl_exec_*.py
+/automl_runner_*.ipynb
+/automl_results.json
+/automl_dataset.csv
+/health_check_output.txt
+/pytest_output.txt
+
 # Model files
 *.pkl
 *.joblib

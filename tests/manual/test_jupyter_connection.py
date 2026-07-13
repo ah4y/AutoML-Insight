@@ -1,10 +1,20 @@
-"""Test Jupyter Server Connection."""
+"""Manual smoke test for a local Jupyter server connection.
+
+Not part of the pytest suite -- run directly: python tests/manual/test_jupyter_connection.py
+Requires a local Jupyter server; configure via env vars, never hardcode a token here.
+"""
+
+import os
 
 from utils.jupyter_client import JupyterServerClient
 
-# Your Jupyter server details
-SERVER_URL = "http://localhost:8888"
-TOKEN = "2b5435e3ecc3a194f7d7b59ac02a14c957c2f0892c9b37fe"
+SERVER_URL = os.environ.get("JUPYTER_SERVER_URL", "http://localhost:8888")
+TOKEN = os.environ.get("JUPYTER_SERVER_TOKEN")
+
+if not TOKEN:
+    raise SystemExit(
+        "Set JUPYTER_SERVER_TOKEN (and optionally JUPYTER_SERVER_URL) before running this script."
+    )
 
 print("=" * 60)
 print("Testing Jupyter Server Connection")
