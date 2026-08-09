@@ -126,4 +126,3 @@ class BaseTab(ABC):
             self.show_warning("Please run AutoML first to see results.")
             return False
         return True
-

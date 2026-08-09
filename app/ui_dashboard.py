@@ -1329,7 +1329,9 @@ Auto-filtering classes with <{st.session_state.min_class_samples} samples to pre
                         # instead of comparing raw values against encoded integers.
                         if preprocessor.label_encoder is not None:
                             raw_labels_filtered = preprocessor.label_encoder.inverse_transform(y_filtered)
-                            valid_raw_labels = set(preprocessor.label_encoder.inverse_transform(list(valid_classes.keys())))
+                            valid_raw_labels = set(
+                                preprocessor.label_encoder.inverse_transform(list(valid_classes.keys()))
+                            )
                             from sklearn.preprocessing import LabelEncoder as _LabelEncoder
 
                             preprocessor.label_encoder = _LabelEncoder()
@@ -3563,7 +3565,10 @@ Ensemble: {auto_config['optimization']['include_ensemble']}
 
         with col1:
             cv_folds = st.slider(
-                "CV Folds", min_value=3, max_value=20, value=prev_valid.get("cv_folds", 5),
+                "CV Folds",
+                min_value=3,
+                max_value=20,
+                value=prev_valid.get("cv_folds", 5),
                 help="Number of cross-validation folds",
             )
 
