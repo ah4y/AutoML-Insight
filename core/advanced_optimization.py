@@ -273,7 +273,10 @@ class AdvancedHyperparameterOptimizer:
         best_params = study.best_params
         # Filter out helper parameters that shouldn't be passed to the model
         model_params = {k: v for k, v in best_params.items() if not k.endswith("_use_none")}
-        optimized_model = model.__class__(**model_params)
+        # Merge over the base model's own params (not just the tuned subset) so fixed
+        # constructor args like probability=True or random_state survive tuning instead
+        # of silently reverting to sklearn's defaults.
+        optimized_model = model.__class__(**{**model.get_params(), **model_params})
 
         # Fit the optimized model
         if self.task_type == "clustering":
@@ -358,9 +361,10 @@ class AdvancedHyperparameterOptimizer:
         # Filter out helper parameters that shouldn't be passed to the model
         model_params = {k: v for k, v in params.items() if not k.endswith("_use_none")}
 
-        # Create model with suggested parameters
+        # Create model with suggested parameters, preserving the base model's fixed
+        # constructor args (e.g. probability=True, random_state) instead of dropping them.
         try:
-            model = base_model.__class__(**model_params)
+            model = base_model.__class__(**{**base_model.get_params(), **model_params})
         except Exception as e:
             logger.debug(f"Failed to create model {model_name} with params {model_params}: {e}")
             if self.verbose:
@@ -684,8 +688,9 @@ class AutoMLPipeline:
         print(" Starting Advanced AutoML Pipeline...")
         print(f" Dataset: {X.shape[0]} samples, {X.shape[1]} features")
 
-        # Set up timeout protection (maximum 30 minutes for entire pipeline)
-        total_timeout = max(self.optimization_time_minutes * 2, 30) * 60  # At least 30 minutes
+        # Total pipeline budget is exactly what the user configured, not a padded/floored
+        # multiple of it - a "15 min" setting must not silently become a 30 min run.
+        total_timeout = self.optimization_time_minutes * 60
         pipeline_start_time = time.time()
 
         # Get default model candidates if none provided
@@ -709,8 +714,10 @@ class AutoMLPipeline:
             print(f"   Time remaining: {remaining_time/60:.1f} minutes")
 
             try:
-                # Set per-model timeout to remaining time or original limit, whichever is smaller
-                model_timeout = min(remaining_time / 60, self.optimization_time_minutes)
+                # Split whatever time is left evenly across the remaining models, so the
+                # first model can't claim the entire budget and starve the rest.
+                models_left = len(model_candidates) - i
+                model_timeout = (remaining_time / 60) / models_left
 
                 # Temporarily adjust optimizer timeout for this model
                 original_timeout = self.optimizer.optimization_time_minutes

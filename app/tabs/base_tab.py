@@ -6,7 +6,7 @@ Provides common functionality and interface for all tabs.
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 import streamlit as st
 
@@ -127,26 +127,3 @@ class BaseTab(ABC):
             return False
         return True
 
-    def render_metric_card(self, label: str, value: str, delta: Optional[str] = None) -> None:
-        """
-        Render a metric card.
-
-        Args:
-            label: Metric label
-            value: Metric value
-            delta: Optional delta value
-        """
-        st.metric(label=label, value=value, delta=delta)
-
-    def render_section_header(self, title: str, description: Optional[str] = None) -> None:
-        """
-        Render a section header.
-
-        Args:
-            title: Section title
-            description: Optional description
-        """
-        st.markdown(f"### {title}")
-        if description:
-            st.markdown(description)
-        st.markdown("---")

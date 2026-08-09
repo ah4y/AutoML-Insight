@@ -10,8 +10,7 @@ Provides decorators and utilities for caching expensive operations:
 
 import hashlib
 import logging
-from functools import wraps
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 import pandas as pd
 import streamlit as st
@@ -55,22 +54,6 @@ def hash_params(**params) -> str:
     except Exception as e:
         logger.warning(f"Failed to hash params: {e}")
         return hashlib.md5(str(params).encode()).hexdigest()
-
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def cached_read_csv(file_path: str, **kwargs) -> pd.DataFrame:
-    """
-    Load CSV with caching.
-
-    Args:
-        file_path: Path to CSV file
-        **kwargs: Additional arguments for pd.read_csv
-
-    Returns:
-        Loaded DataFrame
-    """
-    logger.info(f"Loading CSV (will be cached): {file_path}")
-    return pd.read_csv(file_path, **kwargs)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -135,66 +118,6 @@ def cached_get_models(task_type: str, random_seed: int = 42) -> dict:
         raise ValueError(f"Invalid task type: {task_type}")
 
 
-@st.cache_data(ttl=7200, show_spinner=False)
-def cached_model_evaluation(
-    model_name: str, data_hash: str, config_hash: str, _evaluator: Any, _model: Any, X: pd.DataFrame, y: pd.Series
-) -> dict:
-    """
-    Cache model evaluation results.
-
-    Args:
-        model_name: Name of the model
-        data_hash: Hash of the data
-        config_hash: Hash of configuration
-        _evaluator: Evaluator instance (prefixed with _)
-        _model: Model instance (prefixed with _)
-        X: Feature DataFrame
-        y: Target Series
-
-    Returns:
-        Evaluation results dictionary
-    """
-    logger.info(f"Evaluating {model_name} (will be cached)")
-    return _evaluator.evaluate_model(_model, X, y, model_name)
-
-
-@st.cache_data(ttl=3600, show_spinner=False)
-def cached_visualization_data(plot_type: str, data_hash: str, **plot_params) -> dict:
-    """
-    Cache visualization data preparation.
-
-    Args:
-        plot_type: Type of plot
-        data_hash: Hash of the data
-        **plot_params: Parameters for plot generation
-
-    Returns:
-        Dictionary with plot data
-    """
-    logger.info(f"Preparing {plot_type} visualization data (will be cached)")
-    # This is a placeholder - actual visualization preparation happens in calling code
-    # This function ensures the cache key is properly constructed
-    return {"cached": True, "plot_type": plot_type, "params": plot_params}
-
-
-@st.cache_data(ttl=1800, show_spinner=False)
-def cached_feature_importance(_explainer: Any, model_name: str, data_hash: str) -> dict:
-    """
-    Cache SHAP/feature importance calculations.
-
-    Args:
-        _explainer: ModelExplainer instance (prefixed with _)
-        model_name: Name of the model
-        data_hash: Hash of the data
-
-    Returns:
-        Dictionary with explanation results
-    """
-    logger.info(f"Computing feature importance for {model_name} (will be cached)")
-    # Actual computation happens in calling code
-    return {"model": model_name, "cached": True}
-
-
 def clear_cache(cache_type: str = "all"):
     """
     Clear Streamlit caches.
@@ -213,18 +136,6 @@ def clear_cache(cache_type: str = "all"):
 
     except Exception as e:
         logger.error(f"Failed to clear cache: {e}")
-
-
-def get_cache_stats() -> dict:
-    """
-    Get cache statistics (if available).
-
-    Returns:
-        Dictionary with cache stats
-    """
-    # Note: Streamlit doesn't expose direct cache stats
-    # This is a placeholder for future implementation
-    return {"cache_enabled": True, "data_cache": "active", "resource_cache": "active"}
 
 
 class CachedDataLoader:
@@ -290,51 +201,3 @@ class CachedModelCache:
         """Clear all cached models."""
         st.cache_resource.clear()
         logger.info("Cleared model cache")
-
-
-# Decorator for custom caching logic
-def cache_expensive_operation(ttl: int = 3600):
-    """
-    Decorator for caching expensive operations.
-
-    Args:
-        ttl: Time to live in seconds
-
-    Returns:
-        Decorated function
-    """
-
-    def decorator(func: Callable) -> Callable:
-        @wraps(func)
-        @st.cache_data(ttl=ttl, show_spinner=f"Computing {func.__name__}...")
-        def wrapper(*args, **kwargs):
-            return func(*args, **kwargs)
-
-        return wrapper
-
-    return decorator
-
-
-# Example usage functions
-def cache_ml_pipeline_stage(stage_name: str, data_hash: str):
-    """
-    Decorator factory for caching ML pipeline stages.
-
-    Args:
-        stage_name: Name of the pipeline stage
-        data_hash: Hash of the input data
-
-    Returns:
-        Decorator function
-    """
-
-    def decorator(func: Callable) -> Callable:
-        @wraps(func)
-        @st.cache_data(ttl=3600, show_spinner=f"Processing {stage_name}...")
-        def wrapper(*args, **kwargs):
-            logger.info(f"Executing cached pipeline stage: {stage_name}")
-            return func(*args, **kwargs)
-
-        return wrapper
-
-    return decorator

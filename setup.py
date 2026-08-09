@@ -54,8 +54,6 @@ setup(
         "groq>=0.4.0",
         "openai>=1.0.0",
         "google-generativeai>=0.3.0",
-        "langchain>=0.1.0",
-        "langchain-groq>=0.0.1",
     ],
     extras_require={
         "dev": [

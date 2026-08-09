@@ -37,13 +37,15 @@ Known flaky test: `tests/test_models.py::test_mlp_classifier_training` occasiona
 
 `core/ai_insights.py` (557 lines) and `core/ai_insights_enhanced.py` (963 lines) are both live and functionally overlapping, not a clean supersession. Plan: merge into one engine.
 
-## Phase 3 — Real UI decomposition (planned)
+## Phase 3 — Real UI decomposition
 
-`app/ui_dashboard.py` is one 8,728-line class (`AutoMLDashboard`, 70 methods), including eight 300–742-line `render_*` methods (~39% of the file: `render_recommendation` 742, `render_explainability` 507, `render_classification_results` 433, `render_advanced_evaluation_sections` 376, `_render_dataset_overview_and_analyzer` 374, `run_automl` 342, `render_report` 314, `run_classification` 301).
+| Issue | Fix | Status |
+|---|---|---|
+| `app/ui_dashboard.py` was one 8,728-line class (`AutoMLDashboard`, 70 methods) with eight 300–742-line `render_*` methods; `app/tabs/*` existed but every tab just delegated back to `self.dashboard.render_X()` | Moved the real rendering logic (recommendation, explainability, classification results, advanced evaluation, dataset overview/analyzer, report, models, PCA/dimred, professional AutoML) into their respective `app/tabs/*.py` files. `ui_dashboard.py` is down to 5,040 lines and no longer contains any `render_*` methods for tab content — only orchestration (`run_automl`, `run_classification`, `run_clustering`, stage/sidebar rendering). Zero `self.dashboard.*` delegation calls remain in `app/tabs/`. | ✅ |
+| `app/state/session_manager.py` (`SessionStateManager`) had 0 call sites — a wrapper abstraction nobody used | Deleted rather than wired in; tabs read/write `st.session_state` directly via `BaseTab` helpers (`get_state`/`set_state`), which is what was already happening everywhere else | ✅ |
+| `app/components/*` (4 files: buttons, data_display, metric_cards, section_headers) | Still imported nowhere. Left as-is — not part of this pass | ⬜ |
 
-A prior refactor pass created `app/tabs/*` (7 files), `app/components/*` (4 files, currently imported nowhere), and `app/state/session_manager.py` (`SessionStateManager`, never referenced — 0 call sites) — but every tab file just delegates back to `self.dashboard.render_X()`. `ui_dashboard.py` has 591 raw `st.session_state` touches (154 direct mutations) that should go through `SessionStateManager` instead.
-
-Plan: move real logic into `app/tabs/*.py` per tab, wire `SessionStateManager` in as each tab migrates, use `app/components/*` where it fits. Verified incrementally, one tab at a time.
+`utils/performance_monitor.py` (unused) and dead placeholder cache helpers in `utils/cache_utils.py` (`cached_read_csv`, `cached_model_evaluation`, `cached_visualization_data`, `cached_feature_importance`, `get_cache_stats`, `cache_expensive_operation`, `cache_ml_pipeline_stage` — none had call sites) were also removed in this pass.
 
 ## Phase 4 — Test coverage (planned)
 

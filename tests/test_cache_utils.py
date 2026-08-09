@@ -24,9 +24,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.cache_utils import (
     CachedDataLoader,
     CachedModelCache,
-    cached_read_csv,
     clear_cache,
-    get_cache_stats,
     hash_dataframe,
     hash_params,
 )
@@ -133,14 +131,6 @@ class TestCachedDataLoader:
 
 class TestCacheUtilities:
     """Test cache management utilities."""
-
-    def test_get_cache_stats(self):
-        """Test cache statistics retrieval."""
-        stats = get_cache_stats()
-
-        assert isinstance(stats, dict)
-        assert "cache_enabled" in stats
-        assert stats["cache_enabled"] is True
 
     def test_clear_cache_all(self):
         """Test clearing all caches."""

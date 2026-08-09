@@ -10,7 +10,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 # Ensure project root is on path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 results = {"pass": [], "fail": [], "warn": []}
 
@@ -66,8 +66,6 @@ print("\n--- 3. AI/LLM Dependencies ---")
 warn_check("groq", lambda: __import__("groq"))
 warn_check("openai", lambda: __import__("openai"))
 warn_check("google-generativeai", lambda: __import__("google.generativeai"))
-warn_check("langchain", lambda: __import__("langchain"))
-warn_check("langchain-groq", lambda: __import__("langchain_groq"))
 warn_check("python-dotenv", lambda: __import__("dotenv"))
 
 print("\n--- 4. Utility Dependencies ---")
@@ -110,7 +108,6 @@ check("utils.metrics_utils", lambda: __import__("utils.metrics_utils"))
 check("utils.cache_utils", lambda: __import__("utils.cache_utils"))
 check("utils.cloud_executor", lambda: __import__("utils.cloud_executor"))
 check("utils.jupyter_client", lambda: __import__("utils.jupyter_client"))
-check("utils.performance_monitor", lambda: __import__("utils.performance_monitor"))
 check("utils.visualization_helpers", lambda: __import__("utils.visualization_helpers"))
 
 print("\n--- 7. App Module Imports ---")

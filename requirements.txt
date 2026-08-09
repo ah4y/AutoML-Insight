@@ -53,5 +53,3 @@ python-dotenv==1.2.1
 groq==0.37.1
 openai==2.16.0
 google-generativeai==0.8.6
-langchain==1.2.7
-langchain-groq==1.1.1
