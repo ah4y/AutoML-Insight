@@ -376,7 +376,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 📧 Contact
 
 For questions or support, please open an issue on GitHub.
-sochials: LinkdIN : https://www.linkedin.com/in/ahmed-yassin-052209374/
+
+-sochials: LinkdIN : https://www.linkedin.com/in/ahmed-yassin-052209374/
 
 ---
 
