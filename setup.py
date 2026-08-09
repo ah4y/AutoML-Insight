@@ -10,12 +10,11 @@ long_description = (this_directory / "README.md").read_text(encoding='utf-8')
 setup(
     name="automl-insight",
     version="1.0.0",
-    author="Your Name",
-    author_email="your.email@example.com",
+    author="Ahmed Yassin Mohammed",
     description="Professional AutoML platform with meta-learning and explainability",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/yourusername/AutoML-Insight",
+    url="https://github.com/ah4y/AutoML-Insight",
     packages=find_packages(),
     classifiers=[
         "Development Status :: 4 - Beta",
@@ -48,13 +47,24 @@ setup(
         "weasyprint>=59.0",
         "optuna>=3.3.0",
         "joblib>=1.3.0",
+        "psutil>=5.9.0",
+        "requests>=2.31.0",
+        "pyngrok>=5.1.0",
+        "python-dotenv>=1.0.0",
+        "groq>=0.4.0",
+        "openai>=1.0.0",
+        "google-generativeai>=0.3.0",
     ],
     extras_require={
         "dev": [
             "black>=23.0.0",
+            "isort>=5.12.0",
             "flake8>=6.0.0",
+            "pylint>=2.17.0",
+            "mypy>=1.4.0",
             "pytest>=7.4.0",
             "pytest-cov>=4.1.0",
+            "pre-commit>=3.3.0",
         ]
     },
     entry_points={

@@ -1,0 +1,25 @@
+[tool.black]
+line-length = 120
+target-version = ["py311", "py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 120
+known_first_party = ["app", "core", "utils", "experiments"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = true
+# The codebase has partial type-hint coverage (see PRODUCTION_READINESS.md);
+# tightened incrementally rather than all at once.
+check_untyped_defs = false
+disallow_untyped_defs = false
+
+[tool.pytest.ini_options]
+markers = [
+    "slow: real model-training tests (Optuna trials, full CV loops) excluded by default",
+]
+addopts = "-m 'not slow'"
+testpaths = ["tests"]
+norecursedirs = ["manual"]

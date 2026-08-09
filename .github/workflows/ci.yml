@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - run: pip install -r requirements-dev.txt
+      - run: black --check core/ app/ utils/
+      - run: isort --check-only core/ app/ utils/
+      - run: flake8 core/ app/ utils/
+      - name: mypy (informational, not yet a hard gate)
+        run: mypy core/ app/ utils/ || true
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+      # test_professional_automl.py runs real Optuna trials (several minutes);
+      # excluded here until Phase 4 splits it out behind a `slow` marker
+      # (see PRODUCTION_READINESS.md).
+      - run: pytest tests/ -q --ignore=tests/manual -k "not professional_automl"

@@ -5,8 +5,9 @@ Tests all major components to identify potential issues.
 
 import sys
 from pathlib import Path
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 from sklearn.datasets import load_iris, load_wine
 
 # Add parent to path
@@ -19,16 +20,17 @@ print("=" * 70)
 # Test 1: Import all core modules
 print("\n1️⃣ Testing Core Module Imports...")
 try:
+    from core.ai_insights import DatasetStatistics, get_ai_engine
     from core.data_profile import DataProfiler
-    from core.preprocess import DataPreprocessor
-    from core.models_supervised import get_supervised_models
-    from core.models_clustering import get_clustering_models
     from core.evaluate_cls import ClassificationEvaluator
     from core.evaluate_clu import ClusteringEvaluator
-    from core.visualize import Visualizer
     from core.explain import ModelExplainer
     from core.meta_selector import MetaModelSelector
-    from core.ai_insights import get_ai_engine, DatasetStatistics
+    from core.models_clustering import get_clustering_models
+    from core.models_supervised import get_supervised_models
+    from core.preprocess import DataPreprocessor
+    from core.visualize import Visualizer
+
     print("   ✅ All core modules imported successfully")
 except Exception as e:
     print(f"   ❌ Import error: {e}")
@@ -50,7 +52,7 @@ print("\n3️⃣ Testing Dataset Loading...")
 try:
     iris = load_iris()
     df = pd.DataFrame(iris.data, columns=iris.feature_names)
-    df['target'] = iris.target
+    df["target"] = iris.target
     print(f"   ✅ Loaded Iris dataset: {df.shape[0]} rows, {df.shape[1]} columns")
 except Exception as e:
     print(f"   ❌ Dataset loading error: {e}")
@@ -60,8 +62,8 @@ except Exception as e:
 print("\n4️⃣ Testing Data Profiling...")
 try:
     profiler = DataProfiler()
-    X = df.drop('target', axis=1)
-    y = df['target']
+    X = df.drop("target", axis=1)
+    y = df["target"]
     profile = profiler.profile_dataset(X, y)
     print(f"   ✅ Profile created: {profile['n_samples']} samples, {profile['n_features']} features")
 except Exception as e:
@@ -74,14 +76,16 @@ try:
     X_train, y_train = preprocessor.fit_transform(X, y)
     # Split manually for test
     from sklearn.model_selection import train_test_split
+
     X_train, X_test, y_train, y_test = train_test_split(X_train, y_train, test_size=0.2, random_state=42)
     print(f"   ✅ Preprocessing complete: Train={X_train.shape}, Test={X_test.shape}")
 except Exception as e:
     print(f"   ❌ Preprocessing error: {e}")
     # Fallback
-    X = df.drop('target', axis=1)
-    y = df['target']
+    X = df.drop("target", axis=1)
+    y = df["target"]
     from sklearn.model_selection import train_test_split
+
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
 # Test 6: Supervised Models (Classification)
@@ -98,6 +102,7 @@ except Exception as e:
 print("\n7️⃣ Testing Model Training...")
 try:
     from sklearn.linear_model import LogisticRegression
+
     model = LogisticRegression(random_state=42, max_iter=1000)
     model.fit(X_train, y_train)
     y_pred = model.predict(X_test)
@@ -111,11 +116,11 @@ try:
     evaluator = ClassificationEvaluator()
     results = evaluator.evaluate_model(model, X_train, y_train, "LogisticRegression")
     # Get accuracy from leaderboard
-    if 'leaderboard' in results and len(results['leaderboard']) > 0:
-        first_model = results['leaderboard'][0]
-        accuracy = first_model.get('accuracy', first_model.get('score', first_model.get('accuracy_mean', 'N/A')))
+    if "leaderboard" in results and len(results["leaderboard"]) > 0:
+        first_model = results["leaderboard"][0]
+        accuracy = first_model.get("accuracy", first_model.get("score", first_model.get("accuracy_mean", "N/A")))
     else:
-        accuracy = 'N/A'
+        accuracy = "N/A"
     print(f"   ✅ Evaluation complete: Accuracy={accuracy}")
 except Exception as e:
     print(f"   ❌ Evaluation error: {e}")
@@ -127,9 +132,10 @@ try:
     print(f"   ✅ Loaded {len(clustering_models)} clustering models:")
     for name in list(clustering_models.keys())[:3]:
         print(f"      • {name}")
-    
+
     # Test KMeans
     from sklearn.cluster import KMeans
+
     kmeans = KMeans(n_clusters=3, random_state=42)
     clusters = kmeans.fit_predict(X_train)
     print(f"   ✅ Clustering test complete: {len(set(clusters))} clusters found")
@@ -140,14 +146,15 @@ except Exception as e:
 print("\n🔟 Testing Clustering Evaluation...")
 try:
     from core.evaluate_clu import ClusteringEvaluator
+
     clu_evaluator = ClusteringEvaluator()
     clu_results = clu_evaluator.evaluate_model(kmeans, X_train, "KMeans", y_train)
     # Get silhouette from leaderboard
-    if 'leaderboard' in clu_results and len(clu_results['leaderboard']) > 0:
-        first_model = clu_results['leaderboard'][0]
-        silhouette = first_model.get('silhouette_score', first_model.get('score', 'N/A'))
+    if "leaderboard" in clu_results and len(clu_results["leaderboard"]) > 0:
+        first_model = clu_results["leaderboard"][0]
+        silhouette = first_model.get("silhouette_score", first_model.get("score", "N/A"))
     else:
-        silhouette = 'N/A'
+        silhouette = "N/A"
     print(f"   ✅ Clustering evaluation: Silhouette={silhouette}")
 except Exception as e:
     print(f"   ❌ Clustering evaluation error: {e}")
@@ -156,7 +163,7 @@ except Exception as e:
 print("\n1️⃣1️⃣ Testing Model Explainability...")
 try:
     explainer = ModelExplainer()
-    shap_values = explainer.explain_model(model, X_train[:50], method='tree')
+    shap_values = explainer.explain_model(model, X_train[:50], method="tree")
     print(f"   ✅ SHAP values computed")
 except Exception as e:
     print(f"   ⚠️  Explainability error (may be expected for some models): {e}")
@@ -184,6 +191,7 @@ try:
     visualizer = Visualizer()
     # Test confusion matrix
     from sklearn.metrics import confusion_matrix
+
     cm = confusion_matrix(y_test, y_pred)
     fig = visualizer.plot_confusion_matrix(cm, list(range(3)))
     print(f"   ✅ Visualizations working")
@@ -201,13 +209,13 @@ if ai_engine:
             n_categorical=0,
             target_type="classification",
             n_classes=3,
-            class_balance={'0': 0.33, '1': 0.33, '2': 0.34},
+            class_balance={"0": 0.33, "1": 0.33, "2": 0.34},
             missing_rate=0.0,
             feature_correlations=[
-                ('sepal_length', 'petal_length', 0.87),
+                ("sepal_length", "petal_length", 0.87),
             ],
-            top_features=['sepal_length', 'petal_length'],
-            data_quality_score=95.0
+            top_features=["sepal_length", "petal_length"],
+            data_quality_score=95.0,
         )
         insights = ai_engine.generate_insights(stats, context="test")
         print(f"   ✅ AI insights generated: {len(insights)} sections")
